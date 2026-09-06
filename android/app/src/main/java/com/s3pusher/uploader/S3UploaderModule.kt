@@ -332,7 +332,9 @@ class S3UploaderModule(private val reactContext: ReactApplicationContext) :
     @ReactMethod
     fun prefixStats(prefix: String, promise: Promise) {
         withS3(promise) { s3, _ ->
-            val (bytes, count) = s3.prefixTotals(prefix)
+            val (bytes, count) = s3.prefixTotals(prefix) { b, c ->
+                UploadEvents.scanProgress(b, c)
+            }
             promise.resolve(
                 Arguments.createMap().apply {
                     putDouble("totalBytes", bytes.toDouble())
@@ -669,6 +671,13 @@ class S3UploaderModule(private val reactContext: ReactApplicationContext) :
             putDouble("bytesCopied", bytesCopied.toDouble())
             putDouble("bytesTotal", bytesTotal.toDouble())
             putString("currentName", currentName)
+        })
+    }
+
+    override fun onScanProgress(bytes: Long, count: Long) {
+        emit("S3Uploader:onScanProgress", Arguments.createMap().apply {
+            putDouble("bytes", bytes.toDouble())
+            putDouble("count", count.toDouble())
         })
     }
 

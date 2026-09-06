@@ -1,5 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
 export type SheetOption = {
   label: string;
@@ -70,34 +79,35 @@ export function PromptModal({
     if (visible) setV(initial);
   }, [visible, initial]);
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      statusBarTranslucent
-      onRequestClose={onCancel}>
-      <Pressable style={s.backdrop} onPress={onCancel}>
-        <Pressable style={s.promptCard} onPress={() => {}}>
-          <Text style={s.title}>{title}</Text>
-          <TextInput
-            style={s.input}
-            value={v}
-            onChangeText={setV}
-            placeholder={placeholder}
-            placeholderTextColor="#888"
-            autoFocus
-            autoCapitalize="none"
-          />
-          <View style={s.promptActions}>
-            <Pressable onPress={onCancel} hitSlop={8}>
-              <Text style={s.cancelBtn}>Annuler</Text>
-            </Pressable>
-            <Pressable onPress={() => onSubmit(v.trim())} disabled={!v.trim()} hitSlop={8}>
-              <Text style={[s.okBtn, !v.trim() && s.okDisabled]}>OK</Text>
-            </Pressable>
-          </View>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+      <KeyboardAvoidingView
+        style={s.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <Pressable style={s.promptBackdrop} onPress={onCancel}>
+          <Pressable style={s.promptCard} onPress={() => {}}>
+            <Text style={s.title}>{title}</Text>
+            <TextInput
+              style={s.input}
+              value={v}
+              onChangeText={setV}
+              placeholder={placeholder}
+              placeholderTextColor="#888"
+              autoFocus
+              autoCapitalize="none"
+              onSubmitEditing={() => v.trim() && onSubmit(v.trim())}
+              returnKeyType="done"
+            />
+            <View style={s.promptActions}>
+              <Pressable onPress={onCancel} hitSlop={8}>
+                <Text style={s.cancelBtn}>Annuler</Text>
+              </Pressable>
+              <Pressable onPress={() => onSubmit(v.trim())} disabled={!v.trim()} hitSlop={8}>
+                <Text style={[s.okBtn, !v.trim() && s.okDisabled]}>OK</Text>
+              </Pressable>
+            </View>
+          </Pressable>
         </Pressable>
-      </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -117,7 +127,18 @@ const s = StyleSheet.create({
   destructive: { color: '#ff5a5a' },
   cancel: { color: '#8e8e93' },
 
-  promptCard: { margin: 24, backgroundColor: '#1c1c1e', borderRadius: 14, padding: 20 },
+  flex: { flex: 1 },
+  promptBackdrop: {
+    flex: 1,
+    backgroundColor: '#0009',
+    justifyContent: 'flex-end',
+  },
+  promptCard: {
+    margin: 12,
+    backgroundColor: '#1c1c1e',
+    borderRadius: 14,
+    padding: 20,
+  },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#888',

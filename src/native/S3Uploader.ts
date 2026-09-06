@@ -212,4 +212,7 @@ export const S3Uploader = {
   onMoveProgress(cb: (e: MoveProgressEvent) => void) {
     return emitter.addListener('S3Uploader:onMoveProgress', cb as (...a: unknown[]) => void);
   },
+  onScanProgress(cb: (e: { bytes: number; count: number }) => void) {
+    return emitter.addListener('S3Uploader:onScanProgress', cb as (...a: unknown[]) => void);
+  },
 };

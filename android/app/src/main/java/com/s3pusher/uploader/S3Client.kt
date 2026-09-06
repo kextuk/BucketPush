@@ -175,8 +175,14 @@ class S3Client(
         }
     }
 
-    /** Totaux (octets, nb d'objets) sous un préfixe, paginé, sans delimiter. Retry sur 503. */
-    suspend fun prefixTotals(prefix: String): Pair<Long, Long> {
+    /**
+     * Totaux (octets, nb d'objets) sous un préfixe, paginé, sans delimiter. Retry sur 503.
+     * @param onPage rappelé après chaque page avec les totaux courants (progression).
+     */
+    suspend fun prefixTotals(
+        prefix: String,
+        onPage: ((Long, Long) -> Unit)? = null,
+    ): Pair<Long, Long> {
         var bytes = 0L
         var count = 0L
         var token: String? = null
@@ -190,6 +196,7 @@ class S3Client(
             val res = withRetry("ListObjectsV2") { listObjectsPage(query) }
             res.objects.forEach { bytes += it.size; count++ }
             token = res.nextToken
+            onPage?.invoke(bytes, count)
         } while (token != null)
         return bytes to count
     }

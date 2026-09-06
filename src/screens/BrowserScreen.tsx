@@ -98,6 +98,7 @@ export function BrowserScreen({ navigation }: Props) {
       setLoading(true);
       setError(null);
       const more = cursor != null;
+      if (!more) setFolderSizes({}); // tailles recalculées à chaque changement de dossier
       const toFolders = (prefixes: string[], markers: string[]): Folder[] =>
         uniq([...prefixes, ...markers])
           .map(cp => ({
@@ -402,12 +403,20 @@ export function BrowserScreen({ navigation }: Props) {
 
   const showScopeSize = async (scopePrefix: string, label: string) => {
     setOp({ label: 'Calcul de la taille', done: 0, total: 0 });
+    const sub = S3Uploader.onScanProgress(e => {
+      setOp({
+        label: `${formatBytes(e.bytes)} · ${e.count} objets`,
+        done: 0,
+        total: 0,
+      });
+    });
     try {
       const { totalBytes, objectCount } = await S3Uploader.prefixStats(scopePrefix);
       Alert.alert(label, `${formatBytes(totalBytes)} · ${objectCount} objet(s)`);
     } catch (e: any) {
-      Alert.alert('Échec', String(e?.message ?? e));
+      Alert.alert('Échec du calcul', String(e?.message ?? e));
     } finally {
+      sub.remove();
       setOp(null);
     }
   };
