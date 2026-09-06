@@ -1,8 +1,10 @@
-# S3 Pusher
+# BucketPush — S3 Browser & heavy transfer
 
-Application Android (React Native, sans Expo) pour pousser de **très gros fichiers**
-(> 10 Go, lots de centaines de Go) vers un serveur **S3-compatible**, **sans crash** et
+Application Android (React Native, sans Expo) : **navigateur de bucket S3‑compatible** +
+transfert de **très gros fichiers** (> 10 Go, lots de centaines de Go) **sans crash** et
 **en arrière-plan**.
+
+- ID application : `app.bucketpush.android` · package de code : `com.s3pusher` (inchangé)
 
 ## Principe
 

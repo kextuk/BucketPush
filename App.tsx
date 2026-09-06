@@ -58,7 +58,7 @@ function App(): React.JSX.Element {
           <Stack.Screen
             name="Browser"
             component={BrowserScreen}
-            options={{ title: 'S3 Pusher' }}
+            options={{ title: 'BucketPush' }}
           />
           <Stack.Screen
             name="Queue"
