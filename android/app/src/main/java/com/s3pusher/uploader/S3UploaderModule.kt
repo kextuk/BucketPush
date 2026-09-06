@@ -394,6 +394,75 @@ class S3UploaderModule(private val reactContext: ReactApplicationContext) :
         }
     }
 
+    /** Supprime **toutes** les versions (et marqueurs) des clés données. Résout `{ deleted }`. */
+    @ReactMethod
+    fun purgeKeys(keys: ReadableArray, promise: Promise) {
+        val list = (0 until keys.size()).mapNotNull { keys.getString(it) }
+        withS3(promise) { s3, _ ->
+            val deleted = java.util.concurrent.atomic.AtomicInteger(0)
+            kotlinx.coroutines.coroutineScope {
+                val sem = kotlinx.coroutines.sync.Semaphore(6)
+                list.forEach { k ->
+                    launch(Dispatchers.IO) {
+                        sem.acquire()
+                        try {
+                            var km: String? = null
+                            var vm: String? = null
+                            do {
+                                val res = s3.listObjectVersions(k, km, vm, delimiter = "")
+                                res.versions.filter { it.key == k }.forEach { v ->
+                                    try {
+                                        s3.deleteVersion(k, v.versionId)
+                                        deleted.incrementAndGet()
+                                    } catch (_: Exception) {
+                                    }
+                                }
+                                km = res.nextKeyMarker
+                                vm = res.nextVersionIdMarker
+                            } while (km != null || vm != null)
+                        } finally {
+                            sem.release()
+                        }
+                    }
+                }
+            }
+            promise.resolve(Arguments.createMap().apply { putInt("deleted", deleted.get()) })
+        }
+    }
+
+    /** Restaure les clés « supprimées » : retire les delete markers de tête. Résout `{ restored }`. */
+    @ReactMethod
+    fun restoreKeys(keys: ReadableArray, promise: Promise) {
+        val list = (0 until keys.size()).mapNotNull { keys.getString(it) }
+        withS3(promise) { s3, _ ->
+            val restored = java.util.concurrent.atomic.AtomicInteger(0)
+            kotlinx.coroutines.coroutineScope {
+                val sem = kotlinx.coroutines.sync.Semaphore(6)
+                list.forEach { k ->
+                    launch(Dispatchers.IO) {
+                        sem.acquire()
+                        try {
+                            val res = s3.listObjectVersions(k, null, null, delimiter = "")
+                            var removed = false
+                            for (v in res.versions.filter { it.key == k }) {
+                                if (!v.isDeleteMarker) break // première vraie version atteinte
+                                try {
+                                    s3.deleteVersion(k, v.versionId)
+                                    removed = true
+                                } catch (_: Exception) {
+                                }
+                            }
+                            if (removed) restored.incrementAndGet()
+                        } finally {
+                            sem.release()
+                        }
+                    }
+                }
+            }
+            promise.resolve(Arguments.createMap().apply { putInt("restored", restored.get()) })
+        }
+    }
+
     /** Supprime toutes les versions non-courantes sous un préfixe. Résout `{ deleted }`. */
     @ReactMethod
     fun purgeOldVersions(prefix: String, promise: Promise) {

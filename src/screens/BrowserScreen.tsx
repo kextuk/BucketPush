@@ -8,6 +8,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -15,36 +16,30 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import type { RootStackParamList } from '../../App';
 import { applyNativeConfig } from '../../App';
-import {
-  S3Uploader,
-  type ObjectVersion,
-  type S3ListEntry,
-} from '../native/S3Uploader';
+import { S3Uploader, type ObjectVersion } from '../native/S3Uploader';
 import { useUploader } from '../useUploader';
 import { addFilesTo, addFolderTo, joinKey, summarizeEnqueue } from '../upload';
 import { sanitizeSegment } from '../keys';
-import { ActionSheet, PromptModal } from '../components/Sheets';
+import { ActionSheet, PromptModal, type SheetOption } from '../components/Sheets';
 import { formatBytes, formatBytesExact, formatSpeed } from '../format';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Browser'>;
 
-type Folder = { kind: 'folder'; prefix: string; name: string };
-type FileRow = { kind: 'file'; entry: S3ListEntry; name: string };
-type VersionRow = { kind: 'version'; v: ObjectVersion; name: string; child?: boolean };
-type VersionGroup = {
+type Folder = { kind: 'folder'; prefix: string; name: string; ghost: boolean };
+type FileRow = {
+  kind: 'file';
   key: string;
   name: string;
-  versions: ObjectVersion[];
-  latestIsDelete: boolean;
-  totalBytes: number;
+  ghost: boolean; // dernière version = marqueur de suppression
+  size: number;
+  lastModified?: string;
+  versionCount: number; // versions réelles (hors marqueurs)
+  totalBytes: number; // somme des versions réelles
 };
-type VGroupRow = { kind: 'vgroup'; group: VersionGroup };
-type Row = Folder | FileRow | VersionRow | VGroupRow;
-
-const verKey = (v: ObjectVersion) => `${v.key}\t${v.versionId}`;
+type Row = Folder | FileRow;
 type Mode = 'browse' | 'select' | 'move';
 type SortMode = 'name' | 'size' | 'recent';
-type Cursor = { token?: string; km?: string; vm?: string };
+type Cursor = { km?: string; vm?: string };
 
 const prefixOf = (key: string) => key.slice(0, key.lastIndexOf('/') + 1);
 const baseName = (key: string) => key.slice(key.lastIndexOf('/') + 1);
@@ -52,30 +47,32 @@ const uniq = (a: string[]) => Array.from(new Set(a));
 
 export function BrowserScreen({ navigation }: Props) {
   const [prefix, setPrefix] = useState('');
-  const [folders, setFolders] = useState<Folder[]>([]);
-  const [files, setFiles] = useState<FileRow[]>([]);
-  const [versionRows, setVersionRows] = useState<VersionRow[]>([]);
-  const [showVersions, setShowVersions] = useState(false);
-  const [nextToken, setNextToken] = useState<string | undefined>();
-  const [nextVer, setNextVer] = useState<{ km?: string; vm?: string } | null>(null);
+  const [versions, setVersions] = useState<ObjectVersion[]>([]);
+  const [commonPrefixes, setCommonPrefixes] = useState<string[]>([]);
+  const [nextVer, setNextVer] = useState<Cursor | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [configured, setConfigured] = useState(true);
 
   const [mode, setMode] = useState<Mode>('browse');
   const [selected, setSelected] = useState<string[]>([]);
-  const [selVers, setSelVers] = useState<string[]>([]);
-  const [expanded, setExpanded] = useState<string[]>([]);
   const [folderSizes, setFolderSizes] = useState<
     Record<string, { bytes: number; count: number } | 'loading'>
   >({});
   const [sortMode, setSortMode] = useState<SortMode>('name');
+  const [filter, setFilter] = useState('');
+  const [showFilter, setShowFilter] = useState(false);
   const [op, setOp] = useState<
     { label: string; done: number; total: number; pct?: number } | null
   >(null);
   const [sheet, setSheet] = useState(false);
   const [toolsMenu, setToolsMenu] = useState(false);
-  const [folderMenu, setFolderMenu] = useState<{ prefix: string; name: string } | null>(null);
+  const [selMenu, setSelMenu] = useState(false);
+  const [folderMenu, setFolderMenu] = useState<{
+    prefix: string;
+    name: string;
+    ghost: boolean;
+  } | null>(null);
   const [prompt, setPrompt] = useState<
     { kind: 'newFolder' } | { kind: 'rename'; key: string } | null
   >(null);
@@ -93,83 +90,32 @@ export function BrowserScreen({ navigation }: Props) {
     });
   }, [navigation]);
 
-  const load = useCallback(
-    async (p: string, cursor?: Cursor) => {
-      setLoading(true);
-      setError(null);
-      const more = cursor != null;
-      if (!more) setFolderSizes({}); // tailles recalculées à chaque changement de dossier
-      const toFolders = (prefixes: string[], markers: string[]): Folder[] =>
-        uniq([...prefixes, ...markers])
-          .map(cp => ({
-            kind: 'folder' as const,
-            prefix: cp,
-            name: cp.slice(p.length).replace(/\/$/, ''),
-          }))
-          .sort((a, b) => a.name.localeCompare(b.name));
-      try {
-        if (showVersions) {
-          // récursif (sans delimiter) : les dossiers sont dérivés des clés, donc
-          // même un dossier entièrement supprimé (que des delete markers) apparaît
-          const res = await S3Uploader.listObjectVersions(p, cursor?.km, cursor?.vm, true);
-          const subFolders = new Set<string>();
-          const vr: VersionRow[] = [];
-          for (const v of res.versions) {
-            if (v.key === p) continue; // marqueur du dossier courant lui-même
-            const rel = v.key.slice(p.length);
-            const slash = rel.indexOf('/');
-            if (slash >= 0) {
-              subFolders.add(p + rel.slice(0, slash + 1));
-            } else if (!v.key.endsWith('/')) {
-              vr.push({ kind: 'version', v, name: rel });
-            }
-          }
-          const fs: Folder[] = Array.from(subFolders)
-            .map(pfx => ({
-              kind: 'folder' as const,
-              prefix: pfx,
-              name: pfx.slice(p.length).replace(/\/$/, ''),
-            }))
-            .sort((a, b) => a.name.localeCompare(b.name));
-          setFolders(prev => {
-            const all = more ? [...prev, ...fs] : fs;
-            const seen = new Set<string>();
-            return all.filter(f => (seen.has(f.prefix) ? false : seen.add(f.prefix)));
-          });
-          setVersionRows(prev => (more ? [...prev, ...vr] : vr));
-          setNextVer(
-            res.nextKeyMarker || res.nextVersionIdMarker
-              ? { km: res.nextKeyMarker, vm: res.nextVersionIdMarker }
-              : null,
-          );
-          setNextToken(undefined);
-        } else {
-          const res = await S3Uploader.listObjects(p, cursor?.token);
-          const markers = res.objects
-            .filter(o => o.key.endsWith('/') && o.key !== p)
-            .map(o => o.key);
-          const fs = toFolders(res.prefixes, markers);
-          const os: FileRow[] = res.objects
-            .filter(o => !o.key.endsWith('/'))
-            .map(o => ({ kind: 'file' as const, entry: o, name: o.key.slice(p.length) }));
-          setFolders(prev => (more ? [...prev, ...fs] : fs));
-          setFiles(prev => (more ? [...prev, ...os] : os));
-          setNextToken(res.nextToken);
-          setNextVer(null);
-        }
-      } catch (e: any) {
-        setError(String(e?.message ?? e));
-        if (!more) {
-          setFolders([]);
-          setFiles([]);
-          setVersionRows([]);
-        }
-      } finally {
-        setLoading(false);
+  const load = useCallback(async (p: string, cursor?: Cursor) => {
+    setLoading(true);
+    setError(null);
+    const more = cursor != null;
+    if (!more) setFolderSizes({});
+    try {
+      // ?versions avec delimiter "/" : versions + marqueurs des enfants directs,
+      // + CommonPrefixes pour les sous-dossiers « vivants »
+      const res = await S3Uploader.listObjectVersions(p, cursor?.km, cursor?.vm, false);
+      setCommonPrefixes(prev => (more ? uniq([...prev, ...res.prefixes]) : res.prefixes));
+      setVersions(prev => (more ? [...prev, ...res.versions] : res.versions));
+      setNextVer(
+        res.nextKeyMarker || res.nextVersionIdMarker
+          ? { km: res.nextKeyMarker, vm: res.nextVersionIdMarker }
+          : null,
+      );
+    } catch (e: any) {
+      setError(String(e?.message ?? e));
+      if (!more) {
+        setVersions([]);
+        setCommonPrefixes([]);
       }
-    },
-    [showVersions],
-  );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     load(prefix);
@@ -178,8 +124,7 @@ export function BrowserScreen({ navigation }: Props) {
   useEffect(() => {
     const sub = S3Uploader.onMoveProgress(e => {
       if (e.filesTotal <= 0) return;
-      const pct =
-        e.bytesTotal > 0 ? Math.round((e.bytesCopied / e.bytesTotal) * 100) : 0;
+      const pct = e.bytesTotal > 0 ? Math.round((e.bytesCopied / e.bytesTotal) * 100) : 0;
       setOp({ label: 'Déplacement', done: e.filesDone, total: e.filesTotal, pct });
     });
     return () => sub.remove();
@@ -198,128 +143,143 @@ export function BrowserScreen({ navigation }: Props) {
 
   const reload = useCallback(() => load(prefix), [load, prefix]);
 
-  const sortedFiles = useMemo(() => {
-    const arr = [...files];
-    if (sortMode === 'size') arr.sort((a, b) => b.entry.size - a.entry.size);
-    else if (sortMode === 'recent') {
-      arr.sort(
-        (a, b) =>
-          (Date.parse(b.entry.lastModified ?? '') || 0) -
-          (Date.parse(a.entry.lastModified ?? '') || 0),
-      );
-    } else arr.sort((a, b) => a.name.localeCompare(b.name));
-    return arr;
-  }, [files, sortMode]);
+  // --- Dérivation dossiers + fichiers depuis les versions -------------------
 
-  // versions groupées par objet (petite arborescence)
-  const versionGroups = useMemo(() => {
-    const map = new Map<string, ObjectVersion[]>();
-    for (const r of versionRows) {
-      const a = map.get(r.v.key) ?? [];
-      a.push(r.v);
-      map.set(r.v.key, a);
+  const folders = useMemo<Folder[]>(() => {
+    const map = new Map<string, boolean>(); // prefix -> ghost
+    for (const cp of commonPrefixes) map.set(cp, false);
+    for (const v of versions) {
+      if (v.key === prefix) continue;
+      const rel = v.key.slice(prefix.length);
+      const slash = rel.indexOf('/');
+      if (slash < 0) continue;
+      const fp = prefix + rel.slice(0, slash + 1);
+      if (map.get(fp) === false) continue; // déjà « vivant »
+      const cur = map.get(fp);
+      const ghostNow = v.isDeleteMarker && (cur === undefined || cur);
+      map.set(fp, ghostNow);
     }
-    const groups: VersionGroup[] = [];
-    for (const [key, vs] of map) {
+    return Array.from(map.entries())
+      .map(([pfx, ghost]) => ({
+        kind: 'folder' as const,
+        prefix: pfx,
+        name: pfx.slice(prefix.length).replace(/\/$/, ''),
+        ghost,
+      }))
+      .sort(
+        (a, b) => Number(a.ghost) - Number(b.ghost) || a.name.localeCompare(b.name),
+      );
+  }, [versions, commonPrefixes, prefix]);
+
+  const fileRows = useMemo<FileRow[]>(() => {
+    const byKey = new Map<string, ObjectVersion[]>();
+    for (const v of versions) {
+      if (v.key === prefix || v.key.endsWith('/')) continue;
+      const rel = v.key.slice(prefix.length);
+      if (rel.includes('/') || rel === '') continue;
+      const a = byKey.get(v.key);
+      if (a) a.push(v);
+      else byKey.set(v.key, [v]);
+    }
+    const rows: FileRow[] = [];
+    for (const [key, vs] of byKey) {
       vs.sort(
         (a, b) =>
+          Number(!!b.isLatest) - Number(!!a.isLatest) ||
           (Date.parse(b.lastModified ?? '') || 0) - (Date.parse(a.lastModified ?? '') || 0),
       );
-      groups.push({
+      const latest = vs.find(x => x.isLatest) ?? vs[0];
+      const liveVer = vs.find(x => !x.isDeleteMarker);
+      const ghost = !!latest.isDeleteMarker;
+      rows.push({
+        kind: 'file',
         key,
         name: key.slice(prefix.length),
-        versions: vs,
-        latestIsDelete: vs[0]?.isDeleteMarker ?? false,
-        totalBytes: vs.reduce((s, v) => s + v.size, 0),
+        ghost,
+        size: ghost ? liveVer?.size ?? 0 : latest.size,
+        lastModified: latest.lastModified,
+        versionCount: vs.filter(x => !x.isDeleteMarker).length,
+        totalBytes: vs.reduce((s, x) => s + (x.isDeleteMarker ? 0 : x.size), 0),
       });
     }
-    if (sortMode === 'size') groups.sort((a, b) => b.totalBytes - a.totalBytes);
-    else if (sortMode === 'recent') {
-      groups.sort(
-        (a, b) =>
-          (Date.parse(b.versions[0]?.lastModified ?? '') || 0) -
-          (Date.parse(a.versions[0]?.lastModified ?? '') || 0),
+    const cmp =
+      sortMode === 'size'
+        ? (a: FileRow, b: FileRow) => b.size - a.size
+        : sortMode === 'recent'
+          ? (a: FileRow, b: FileRow) =>
+              (Date.parse(b.lastModified ?? '') || 0) - (Date.parse(a.lastModified ?? '') || 0)
+          : (a: FileRow, b: FileRow) => a.name.localeCompare(b.name);
+    return rows.sort((a, b) => Number(a.ghost) - Number(b.ghost) || cmp(a, b));
+  }, [versions, prefix, sortMode]);
+
+  const rows = useMemo<Row[]>(() => [...folders, ...fileRows], [folders, fileRows]);
+
+  const displayRows = useMemo(() => {
+    let r = rows;
+    if (filter.trim()) {
+      const q = filter.trim().toLowerCase();
+      r = r.filter(x =>
+        (x.kind === 'folder' ? x.name : x.name).toLowerCase().includes(q),
       );
-    } else groups.sort((a, b) => a.name.localeCompare(b.name));
-    return groups;
-  }, [versionRows, prefix, sortMode]);
-
-  const versionDisplayRows = useMemo(() => {
-    const out: Row[] = [...folders];
-    for (const g of versionGroups) {
-      if (g.versions.length <= 1) {
-        out.push({ kind: 'version', v: g.versions[0], name: g.name });
-      } else {
-        out.push({ kind: 'vgroup', group: g });
-        if (expanded.includes(g.key)) {
-          for (const v of g.versions) {
-            out.push({ kind: 'version', v, name: g.name, child: true });
-          }
-        }
-      }
     }
-    return out;
-  }, [folders, versionGroups, expanded]);
-
-  const rows: Row[] = useMemo(
-    () => (showVersions ? versionDisplayRows : [...folders, ...sortedFiles]),
-    [showVersions, versionDisplayRows, folders, sortedFiles],
-  );
-
-  // en mode déplacement : on n'affiche que les dossiers (destinations) + les fichiers déplacés
-  const displayRows = useMemo(
-    () =>
-      mode === 'move'
-        ? rows.filter(r => r.kind === 'folder' || (r.kind === 'file' && selected.includes(r.entry.key)))
-        : rows,
-    [rows, mode, selected],
-  );
+    if (mode === 'move') {
+      r = r.filter(
+        x => x.kind === 'folder' || (x.kind === 'file' && selected.includes(x.key)),
+      );
+    }
+    return r;
+  }, [rows, filter, mode, selected]);
 
   // --- Sélection --------------------------------------------------------------
+
+  const selMeta = useMemo(() => {
+    const set = new Set(selected);
+    const sel = fileRows.filter(f => set.has(f.key));
+    return {
+      ghostKeys: sel.filter(f => f.ghost).map(f => f.key),
+      liveKeys: sel.filter(f => !f.ghost).map(f => f.key),
+      hasGhost: sel.some(f => f.ghost),
+      allLive: sel.length > 0 && sel.every(f => !f.ghost),
+    };
+  }, [selected, fileRows]);
 
   const exitMode = () => {
     setMode('browse');
     setSelected([]);
-    setSelVers([]);
+  };
+  const startMove = () => {
+    setFilter('');
+    setShowFilter(false);
+    setMode('move');
   };
   const toggle = (key: string) =>
     setSelected(prev => {
       const next = prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key];
-      if (next.length === 0 && mode === 'select') setMode('browse');
-      return next;
-    });
-  const toggleVer = (v: ObjectVersion) => {
-    const id = verKey(v);
-    setMode('select');
-    setSelVers(prev => {
-      const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
       if (next.length === 0) setMode('browse');
       return next;
     });
-  };
-  const selectAllOldVersions = () =>
-    setSelVers(versionRows.filter(r => !r.v.isLatest).map(r => verKey(r.v)));
-  const toggleExpand = (key: string) =>
-    setExpanded(prev => (prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]));
-  const selectAll = () => setSelected(sortedFiles.map(f => f.entry.key));
+  const selectAll = () => setSelected(fileRows.map(f => f.key));
 
-  const onFilePress = (entry: S3ListEntry) => {
+  const onFileTap = (key: string) => {
     if (mode === 'move') return;
     if (mode === 'browse') {
       setMode('select');
-      setSelected([entry.key]);
+      setSelected([key]);
     } else {
-      toggle(entry.key);
+      toggle(key);
+    }
+  };
+  const onFileLongPress = (key: string) => {
+    if (mode === 'select' && selected.length) setSelMenu(true);
+    else if (mode !== 'move') {
+      setMode('select');
+      setSelected(prev => (prev.includes(key) ? prev : [...prev, key]));
     }
   };
 
   // --- Opérations batch -----------------------------------------------------
 
-  const runBatch = async (
-    label: string,
-    keys: string[],
-    fn: (key: string) => Promise<void>,
-  ) => {
+  const runBatch = async (label: string, keys: string[], fn: (key: string) => Promise<void>) => {
     setOp({ label, done: 0, total: keys.length });
     let failed = 0;
     for (let i = 0; i < keys.length; i++) {
@@ -357,18 +317,17 @@ export function BrowserScreen({ navigation }: Props) {
   };
 
   const pasteHere = () => {
-    const conflict = selected.some(k => prefixOf(k) === prefix);
-    if (conflict) {
+    if (selected.some(k => prefixOf(k) === prefix)) {
       Alert.alert('Destination invalide', 'Certains fichiers sont déjà dans ce dossier.');
       return;
     }
     runMove(selected.map(k => ({ src: k, dst: joinKey(prefix, baseName(k)) })));
   };
 
-  const deleteSelected = () => {
+  const softDeleteSelected = () => {
     Alert.alert(
       `Supprimer ${selected.length} fichier(s) ?`,
-      'Action irréversible.',
+      'Récupérable via « Restaurer » tant que la version n’est pas purgée.',
       [
         { text: 'Annuler', style: 'cancel' },
         {
@@ -381,28 +340,48 @@ export function BrowserScreen({ navigation }: Props) {
     );
   };
 
-  const deleteSelectedVersions = () => {
-    const targets = versionRows
-      .filter(r => selVers.includes(verKey(r.v)))
-      .map(r => r.v);
-    if (!targets.length) return;
+  const purgeSelected = () => {
     Alert.alert(
-      `Supprimer ${targets.length} version(s) ?`,
-      'Définitif. Supprimer un marqueur 🗑 restaure le fichier.',
+      `Supprimer définitivement ${selected.length} objet(s) ?`,
+      'Toutes les versions ET les marqueurs seront supprimés. Irréversible.',
       [
         { text: 'Annuler', style: 'cancel' },
         {
-          text: 'Supprimer',
+          text: 'Supprimer déf.',
           style: 'destructive',
-          onPress: () =>
-            runBatch('Suppression', targets.map(verKey), async id => {
-              const [k, vid] = id.split('\t');
-              await S3Uploader.deleteVersion(k, vid);
-            }),
+          onPress: async () => {
+            setOp({ label: 'Suppression définitive', done: 0, total: 0 });
+            try {
+              const { deleted } = await S3Uploader.purgeKeys(selected);
+              Alert.alert('Terminé', `${deleted} version(s) supprimée(s).`);
+            } catch (e: any) {
+              Alert.alert('Échec', String(e?.message ?? e));
+            } finally {
+              setOp(null);
+              exitMode();
+              reload();
+            }
+          },
         },
       ],
       { cancelable: true },
     );
+  };
+
+  const restoreSelected = async () => {
+    const keys = selMeta.ghostKeys;
+    if (!keys.length) return;
+    setOp({ label: 'Restauration', done: 0, total: 0 });
+    try {
+      const { restored } = await S3Uploader.restoreKeys(keys);
+      Alert.alert('Restauré', `${restored} fichier(s) restauré(s).`);
+    } catch (e: any) {
+      Alert.alert('Échec', String(e?.message ?? e));
+    } finally {
+      setOp(null);
+      exitMode();
+      reload();
+    }
   };
 
   const computeFolderSize = async (folderPrefix: string) => {
@@ -419,30 +398,19 @@ export function BrowserScreen({ navigation }: Props) {
     }
   };
 
-  const showScopeSize = async (
-    scopePrefix: string,
-    label: string,
-    allVersions = false,
-  ) => {
+  const showScopeSize = async (scopePrefix: string, label: string, allVersions = false) => {
     setOp({ label: 'Calcul de la taille', done: 0, total: 0 });
     const sub = S3Uploader.onScanProgress(e => {
-      setOp({
-        label: `${formatBytes(e.bytes)} · ${e.count} objets`,
-        done: 0,
-        total: 0,
-      });
+      setOp({ label: `${formatBytes(e.bytes)} · ${e.count} objets`, done: 0, total: 0 });
     });
     try {
-      const { totalBytes, objectCount } = await S3Uploader.prefixStats(
-        scopePrefix,
-        allVersions,
-      );
+      const { totalBytes, objectCount } = await S3Uploader.prefixStats(scopePrefix, allVersions);
       Alert.alert(
         `${label}${allVersions ? ' — toutes versions' : ''}`,
         `${formatBytesExact(totalBytes)}\n${objectCount} objet(s)` +
           (allVersions
             ? ''
-            : '\n\n(versions actuelles seulement — utilise « taille réelle » pour le total facturé B2)'),
+            : '\n\n(versions actuelles seulement — « taille réelle » pour le total facturé B2)'),
       );
     } catch (e: any) {
       Alert.alert('Échec du calcul', String(e?.message ?? e));
@@ -466,7 +434,7 @@ export function BrowserScreen({ navigation }: Props) {
     }
   };
 
-  // --- Ajouts (FAB) --------------------------------------------------------
+  // --- Ajouts / dossiers -------------------------------------------------
 
   const addFiles = async () => {
     try {
@@ -513,7 +481,7 @@ export function BrowserScreen({ navigation }: Props) {
   const deleteFolder = (folderPrefix: string) => {
     Alert.alert(
       'Supprimer ce dossier ?',
-      folderPrefix + '\nTout son contenu sera supprimé.',
+      folderPrefix + '\nTout son contenu sera supprimé (récupérable jusqu’à purge).',
       [
         { text: 'Annuler', style: 'cancel' },
         {
@@ -537,39 +505,29 @@ export function BrowserScreen({ navigation }: Props) {
     );
   };
 
-  const deleteOrRestore = (v: ObjectVersion) => {
-    const restore = v.isDeleteMarker && v.isLatest;
-    Alert.alert(
-      restore
-        ? 'Restaurer ce fichier ?'
-        : v.isDeleteMarker
-          ? 'Supprimer ce marqueur ?'
-          : 'Supprimer cette version ?',
-      restore
-        ? `${v.key}\nLe marqueur de suppression sera retiré, la version précédente redevient l’actuelle.`
-        : `${v.key}\n${v.isDeleteMarker ? 'marqueur de suppression' : formatBytes(v.size)} · ${shortDate(
-            v.lastModified,
-          )}`,
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: restore ? 'Restaurer' : 'Supprimer',
-          style: 'destructive',
-          onPress: async () => {
-            setOp({ label: 'Suppression', done: 0, total: 0 });
-            try {
-              await S3Uploader.deleteVersion(v.key, v.versionId);
-              reload();
-            } catch (e: any) {
-              Alert.alert('Échec', String(e?.message ?? e));
-            } finally {
-              setOp(null);
-            }
-          },
-        },
-      ],
-      { cancelable: true },
-    );
+  const restoreFolder = async (folderPrefix: string) => {
+    setOp({ label: 'Restauration', done: 0, total: 0 });
+    try {
+      // toutes les clés supprimées sous le préfixe
+      const dead = new Set<string>();
+      let km: string | undefined;
+      let vm: string | undefined;
+      let more = true;
+      while (more) {
+        const r = await S3Uploader.listObjectVersions(folderPrefix, km, vm, true);
+        for (const v of r.versions) if (v.isDeleteMarker && v.isLatest) dead.add(v.key);
+        km = r.nextKeyMarker;
+        vm = r.nextVersionIdMarker;
+        more = !!(km || vm);
+      }
+      const { restored } = await S3Uploader.restoreKeys(Array.from(dead));
+      reload();
+      Alert.alert('Restauré', `${restored} fichier(s) restauré(s).`);
+    } catch (e: any) {
+      Alert.alert('Échec', String(e?.message ?? e));
+    } finally {
+      setOp(null);
+    }
   };
 
   const purgeVersions = (scopePrefix: string, label: string) => {
@@ -614,105 +572,129 @@ export function BrowserScreen({ navigation }: Props) {
   }
 
   const segments = prefix.split('/').filter(Boolean);
+  const crumbs = (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.crumbs}>
+      <Crumb label="Bucket" onPress={() => setPrefix('')} active={!segments.length} />
+      {segments.map((seg, i) => (
+        <React.Fragment key={i}>
+          <Text style={styles.sep}>›</Text>
+          <Crumb
+            label={seg}
+            active={i === segments.length - 1}
+            onPress={() => setPrefix(segments.slice(0, i + 1).join('/') + '/')}
+          />
+        </React.Fragment>
+      ))}
+    </ScrollView>
+  );
+
+  const selMenuOptions: SheetOption[] = [];
+  if (selected.length === 1) {
+    selMenuOptions.push({
+      label: 'Voir les versions',
+      onPress: () => navigation.navigate('Versions', { objectKey: selected[0] }),
+    });
+  }
+  if (selMeta.hasGhost) {
+    selMenuOptions.push({ label: `Restaurer (${selMeta.ghostKeys.length})`, onPress: restoreSelected });
+  }
+  selMenuOptions.push({
+    label: `Supprimer définitivement (${selected.length})`,
+    destructive: true,
+    onPress: purgeSelected,
+  });
 
   return (
     <View style={styles.container}>
-      {/* Barre supérieure : mode-dépendante */}
       {mode === 'browse' ? (
         <View style={styles.topBar}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.crumbScroll}
-            contentContainerStyle={styles.crumbs}>
-            <Crumb label="Bucket" onPress={() => setPrefix('')} active={!segments.length} />
-            {segments.map((seg, i) => (
-              <React.Fragment key={i}>
-                <Text style={styles.sep}>›</Text>
-                <Crumb
-                  label={seg}
-                  active={i === segments.length - 1}
-                  onPress={() => setPrefix(segments.slice(0, i + 1).join('/') + '/')}
-                />
-              </React.Fragment>
-            ))}
-          </ScrollView>
-          {!showVersions ? (
-            <Pressable
-              onPress={() => setPrompt({ kind: 'newFolder' })}
-              hitSlop={8}
-              style={styles.topAction}>
-              <Text style={styles.topActionText}>＋dossier</Text>
-            </Pressable>
-          ) : null}
-          <Pressable
-            onPress={() => {
-              setShowVersions(v => !v);
-              exitMode();
-            }}
-            hitSlop={8}
-            style={styles.topAction}>
-            <Text style={[styles.topActionText, showVersions && styles.topActionOn]}>
-              {showVersions ? '← fichiers' : 'versions'}
-            </Text>
-          </Pressable>
-          <Pressable onPress={cycleSort(sortMode, setSortMode)} hitSlop={8} style={styles.topAction}>
-            <Text style={styles.sortBtn}>{sortLabel(sortMode)}</Text>
-          </Pressable>
-          <Pressable onPress={() => setToolsMenu(true)} hitSlop={8} style={styles.topAction}>
-            <Text style={styles.topActionText}>⋮</Text>
-          </Pressable>
+          <View style={styles.crumbRow}>{crumbs}</View>
+          {showFilter ? (
+            <View style={styles.actionsRow}>
+              <TextInput
+                style={styles.filterInput}
+                value={filter}
+                onChangeText={setFilter}
+                placeholder="Filtrer…"
+                placeholderTextColor="#888"
+                autoFocus
+                autoCapitalize="none"
+              />
+              <Pressable
+                onPress={() => {
+                  setFilter('');
+                  setShowFilter(false);
+                }}
+                hitSlop={10}
+                style={styles.tBtn}>
+                <Text style={styles.tBtnText}>✕</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={styles.actionsRow}>
+              <Pressable
+                onPress={() => setPrompt({ kind: 'newFolder' })}
+                style={styles.tBtn}>
+                <Text style={styles.tBtnText}>＋ dossier</Text>
+              </Pressable>
+              <View style={styles.spacer} />
+              <Pressable onPress={() => setShowFilter(true)} style={styles.tBtn}>
+                <Text style={styles.tBtnText}>🔍</Text>
+              </Pressable>
+              <Pressable onPress={cycleSort(sortMode, setSortMode)} style={styles.tBtn}>
+                <Text style={styles.tBtnText}>{sortLabel(sortMode)}</Text>
+              </Pressable>
+              <Pressable onPress={() => setToolsMenu(true)} style={styles.tBtn}>
+                <Text style={styles.tBtnText}>⋮</Text>
+              </Pressable>
+            </View>
+          )}
         </View>
       ) : (
         <View style={[styles.actionBar, mode === 'move' && styles.actionBarMove]}>
           <Pressable onPress={exitMode} hitSlop={10}>
             <Text style={styles.abClose}>✕</Text>
           </Pressable>
-          {mode === 'select' && showVersions ? (
+          {mode === 'select' ? (
             <>
-              <Text style={styles.abTitle}>{selVers.length} version(s)</Text>
-              <Pressable onPress={selectAllOldVersions} hitSlop={8}>
-                <Text style={styles.abAction}>Anciennes</Text>
-              </Pressable>
-              <Pressable onPress={deleteSelectedVersions} hitSlop={8} disabled={!selVers.length}>
-                <Text
-                  style={[styles.abAction, styles.abDanger, !selVers.length && styles.abDisabled]}>
-                  Suppr.
-                </Text>
-              </Pressable>
-            </>
-          ) : mode === 'select' ? (
-            <>
-              <Text style={styles.abTitle}>{selected.length} sélectionné(s)</Text>
+              <Text style={styles.abTitle} numberOfLines={1}>
+                {selected.length} sél.
+                {selMeta.hasGhost ? ` · ${selMeta.ghostKeys.length} 🗑` : ''}
+              </Text>
               <Pressable onPress={selectAll} hitSlop={8}>
                 <Text style={styles.abAction}>Tout</Text>
               </Pressable>
-              <Pressable onPress={() => setMode('move')} hitSlop={8} disabled={!selected.length}>
-                <Text style={[styles.abAction, !selected.length && styles.abDisabled]}>
-                  Déplacer
-                </Text>
-              </Pressable>
-              {selected.length === 1 ? (
+              {selMeta.allLive ? (
                 <>
-                  <Pressable
-                    onPress={() => setPrompt({ kind: 'rename', key: selected[0] })}
-                    hitSlop={8}>
-                    <Text style={styles.abAction}>Renommer</Text>
+                  <Pressable onPress={startMove} hitSlop={8}>
+                    <Text style={styles.abAction}>Déplacer</Text>
                   </Pressable>
-                  <Pressable
-                    onPress={() =>
-                      navigation.navigate('Versions', { objectKey: selected[0] })
-                    }
-                    hitSlop={8}>
-                    <Text style={styles.abAction}>Versions</Text>
+                  {selected.length === 1 ? (
+                    <Pressable
+                      onPress={() => setPrompt({ kind: 'rename', key: selected[0] })}
+                      hitSlop={8}>
+                      <Text style={styles.abAction}>Renommer</Text>
+                    </Pressable>
+                  ) : null}
+                  <Pressable onPress={softDeleteSelected} hitSlop={8}>
+                    <Text style={[styles.abAction, styles.abDanger]}>Suppr.</Text>
                   </Pressable>
                 </>
-              ) : null}
-              <Pressable onPress={deleteSelected} hitSlop={8} disabled={!selected.length}>
-                <Text style={[styles.abAction, styles.abDanger, !selected.length && styles.abDisabled]}>
-                  Suppr.
-                </Text>
-              </Pressable>
+              ) : (
+                <>
+                  {selMeta.hasGhost ? (
+                    <Pressable onPress={restoreSelected} hitSlop={8}>
+                      <Text style={styles.abAction}>Restaurer</Text>
+                    </Pressable>
+                  ) : null}
+                  <Pressable onPress={purgeSelected} hitSlop={8}>
+                    <Text style={[styles.abAction, styles.abDanger]}>Suppr. déf.</Text>
+                  </Pressable>
+                </>
+              )}
             </>
           ) : (
             <>
@@ -727,25 +709,7 @@ export function BrowserScreen({ navigation }: Props) {
         </View>
       )}
 
-      {mode === 'move' ? (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.crumbs}
-          style={styles.moveCrumbs}>
-          <Crumb label="Bucket" onPress={() => setPrefix('')} active={!segments.length} />
-          {segments.map((seg, i) => (
-            <React.Fragment key={i}>
-              <Text style={styles.sep}>›</Text>
-              <Crumb
-                label={seg}
-                active={i === segments.length - 1}
-                onPress={() => setPrefix(segments.slice(0, i + 1).join('/') + '/')}
-              />
-            </React.Fragment>
-          ))}
-        </ScrollView>
-      ) : null}
+      {mode === 'move' ? <View style={styles.moveCrumbs}>{crumbs}</View> : null}
 
       {op ? (
         <View>
@@ -769,29 +733,26 @@ export function BrowserScreen({ navigation }: Props) {
 
       <FlatList
         data={displayRows}
-        keyExtractor={r =>
-          r.kind === 'folder'
-            ? `f:${r.prefix}`
-            : r.kind === 'vgroup'
-              ? `g:${r.group.key}`
-              : r.kind === 'version'
-                ? `v:${r.v.key}:${r.v.versionId}`
-                : `o:${r.entry.key}`
-        }
-        contentContainerStyle={rows.length ? styles.listPad : styles.emptyWrap}
+        keyExtractor={r => (r.kind === 'folder' ? `f:${r.prefix}` : `o:${r.key}`)}
+        contentContainerStyle={displayRows.length ? styles.listPad : styles.emptyWrap}
         refreshControl={
           <RefreshControl refreshing={loading && rows.length === 0} onRefresh={reload} />
         }
-        ListEmptyComponent={loading ? undefined : <Text style={styles.dimText}>Dossier vide</Text>}
+        ListEmptyComponent={
+          loading ? undefined : (
+            <Text style={styles.dimText}>{filter ? 'Aucun résultat' : 'Dossier vide'}</Text>
+          )
+        }
         renderItem={({ item }) =>
           item.kind === 'folder' ? (
             <Pressable
-              style={styles.row}
+              style={[styles.row, item.ghost && styles.rowGhost]}
               onPress={() => setPrefix(item.prefix)}
               onLongPress={() =>
-                mode === 'browse' && setFolderMenu({ prefix: item.prefix, name: item.name })
+                mode === 'browse' &&
+                setFolderMenu({ prefix: item.prefix, name: item.name, ghost: item.ghost })
               }>
-              <Text style={styles.folderIcon}>📁</Text>
+              <Text style={styles.folderIcon}>{item.ghost ? '🗑' : '📁'}</Text>
               <View style={styles.rowMain}>
                 <Text style={styles.rowName} numberOfLines={1}>
                   {item.name}
@@ -803,117 +764,56 @@ export function BrowserScreen({ navigation }: Props) {
                   </Text>
                 ) : null}
               </View>
-              {folderSizes[item.prefix] === 'loading' ? (
+              {item.ghost ? (
+                <Text style={[styles.tag, styles.tagDel]}>supprimé</Text>
+              ) : folderSizes[item.prefix] === 'loading' ? (
                 <ActivityIndicator size="small" />
               ) : !folderSizes[item.prefix] ? (
-                <Pressable hitSlop={10} onPress={() => computeFolderSize(item.prefix)}>
+                <Pressable hitSlop={12} onPress={() => computeFolderSize(item.prefix)}>
                   <Text style={styles.sumBtn}>∑</Text>
                 </Pressable>
               ) : null}
               <Text style={styles.chevron}>›</Text>
             </Pressable>
-          ) : item.kind === 'vgroup' ? (
-            <Pressable
-              style={[styles.row, item.group.latestIsDelete && styles.rowGhost]}
-              onPress={() => toggleExpand(item.group.key)}>
-              <Text style={styles.chevron}>
-                {expanded.includes(item.group.key) ? '▾' : '▸'}
-              </Text>
-              <View style={styles.rowMain}>
-                <Text style={styles.rowName} numberOfLines={1}>
-                  {item.group.name || baseName(item.group.key)}
-                </Text>
-                <Text style={styles.rowMeta}>
-                  {item.group.versions.length} versions ·{' '}
-                  {formatBytes(item.group.totalBytes)}
-                </Text>
-              </View>
-              <Text
-                style={[
-                  styles.verTag,
-                  item.group.latestIsDelete ? styles.verTagDeleted : styles.verTagCurrent,
-                ]}>
-                {item.group.latestIsDelete ? 'supprimé' : 'actuelle'}
-              </Text>
-            </Pressable>
-          ) : item.kind === 'version' ? (
+          ) : (
             <Pressable
               style={[
                 styles.row,
-                item.child && styles.rowChild,
-                !item.v.isLatest && styles.rowGhost,
+                item.ghost && styles.rowGhost,
+                mode === 'move' && styles.rowMoving,
               ]}
-              onPress={() => toggleVer(item.v)}
-              onLongPress={() => deleteOrRestore(item.v)}>
+              onPress={() => onFileTap(item.key)}
+              onLongPress={() => onFileLongPress(item.key)}>
               {mode === 'select' ? (
-                <View
-                  style={[styles.check, selVers.includes(verKey(item.v)) && styles.checkOn]}>
-                  {selVers.includes(verKey(item.v)) ? (
-                    <Text style={styles.checkMark}>✓</Text>
-                  ) : null}
+                <View style={[styles.check, selected.includes(item.key) && styles.checkOn]}>
+                  {selected.includes(item.key) ? <Text style={styles.checkMark}>✓</Text> : null}
                 </View>
               ) : (
-                <Text style={styles.fileIcon}>{item.v.isDeleteMarker ? '🗑' : '·'}</Text>
+                <Text style={styles.fileIcon}>{item.ghost ? '🗑' : '·'}</Text>
               )}
               <View style={styles.rowMain}>
                 <Text style={styles.rowName} numberOfLines={1}>
-                  {item.name || baseName(item.v.key)}
+                  {item.name || baseName(item.key)}
                 </Text>
                 <Text style={styles.rowMeta}>
-                  {item.v.isDeleteMarker ? 'marqueur de suppression' : formatBytes(item.v.size)}
-                  {item.v.lastModified ? ` · ${shortDate(item.v.lastModified)}` : ''}
+                  {formatBytes(item.ghost ? item.totalBytes : item.size)}
+                  {item.lastModified ? ` · ${shortDate(item.lastModified)}` : ''}
+                  {item.versionCount > 1 ? ` · ${item.versionCount} versions` : ''}
                 </Text>
               </View>
-              <Text
-                style={[
-                  styles.verTag,
-                  item.v.isLatest && !item.v.isDeleteMarker && styles.verTagCurrent,
-                  item.v.isDeleteMarker && styles.verTagDeleted,
-                ]}>
-                {item.v.isDeleteMarker ? 'supprimé' : item.v.isLatest ? 'actuelle' : 'ancienne'}
-              </Text>
-            </Pressable>
-          ) : (
-            <Pressable
-              style={[styles.row, mode === 'move' && styles.rowMoving]}
-              onPress={() => onFilePress(item.entry)}
-              onLongPress={() => onFilePress(item.entry)}>
-              {mode === 'select' ? (
-                <View style={[styles.check, selected.includes(item.entry.key) && styles.checkOn]}>
-                  {selected.includes(item.entry.key) ? <Text style={styles.checkMark}>✓</Text> : null}
-                </View>
-              ) : (
-                <Text style={styles.fileIcon}>·</Text>
-              )}
-              <View style={styles.rowMain}>
-                <Text style={styles.rowName} numberOfLines={1}>
-                  {item.name || baseName(item.entry.key)}
-                </Text>
-                <Text style={styles.rowMeta}>
-                  {formatBytes(item.entry.size)}
-                  {item.entry.lastModified ? ` · ${shortDate(item.entry.lastModified)}` : ''}
-                </Text>
-              </View>
+              {item.ghost ? (
+                <Text style={[styles.tag, styles.tagDel]}>supprimé</Text>
+              ) : item.versionCount > 1 ? (
+                <Text style={styles.tag}>{item.versionCount}v</Text>
+              ) : null}
             </Pressable>
           )
-        }
-        ListHeaderComponent={
-          showVersions ? (
-            <Text style={styles.verHint}>
-              Toutes les versions. Tape pour sélectionner, appui long = supprimer / restaurer.
-              {'\n'}Un fichier « supprimé » se restaure en retirant son marqueur 🗑.
-            </Text>
-          ) : undefined
         }
         ListFooterComponent={
           <View style={styles.footer}>
             {loading && rows.length > 0 ? <ActivityIndicator /> : null}
-            {!loading && (showVersions ? nextVer != null : nextToken != null) ? (
-              <Pressable
-                style={styles.moreBtn}
-                onPress={() =>
-                  load(prefix, showVersions ? { km: nextVer?.km, vm: nextVer?.vm } : { token: nextToken })
-                }>
+            {!loading && nextVer != null ? (
+              <Pressable style={styles.moreBtn} onPress={() => load(prefix, nextVer)}>
                 <Text style={styles.moreText}>Charger plus</Text>
               </Pressable>
             ) : null}
@@ -950,13 +850,19 @@ export function BrowserScreen({ navigation }: Props) {
       />
 
       <ActionSheet
+        visible={selMenu}
+        title={`${selected.length} sélectionné(s)`}
+        options={selMenuOptions}
+        onClose={() => setSelMenu(false)}
+      />
+
+      <ActionSheet
         visible={toolsMenu}
         title="Outils"
         options={[
           {
             label: 'Taille de ce dossier',
-            onPress: () =>
-              showScopeSize(prefix, prefix ? `/${prefix}` : 'Racine du bucket'),
+            onPress: () => showScopeSize(prefix, prefix ? `/${prefix}` : 'Racine du bucket'),
           },
           {
             label: 'Taille du dépôt (versions actuelles)',
@@ -969,8 +875,7 @@ export function BrowserScreen({ navigation }: Props) {
           {
             label: 'Purger les anciennes versions (dossier courant)',
             destructive: true,
-            onPress: () =>
-              purgeVersions(prefix, prefix ? `/${prefix}` : 'racine du bucket'),
+            onPress: () => purgeVersions(prefix, prefix ? `/${prefix}` : 'racine du bucket'),
           },
           {
             label: 'Purger les anciennes versions (tout le bucket)',
@@ -987,10 +892,17 @@ export function BrowserScreen({ navigation }: Props) {
         options={
           folderMenu
             ? [
+                ...(folderMenu.ghost
+                  ? [
+                      {
+                        label: 'Restaurer le contenu',
+                        onPress: () => restoreFolder(folderMenu.prefix),
+                      },
+                    ]
+                  : []),
                 {
                   label: 'Purger les anciennes versions',
-                  onPress: () =>
-                    purgeVersions(folderMenu.prefix, `/${folderMenu.prefix}`),
+                  onPress: () => purgeVersions(folderMenu.prefix, `/${folderMenu.prefix}`),
                 },
                 {
                   label: 'Supprimer le dossier et son contenu',
@@ -1027,8 +939,6 @@ function Crumb({ label, onPress, active }: { label: string; onPress: () => void;
   );
 }
 
-// --- Helpers -------------------------------------------------------------
-
 function shortDate(iso?: string): string {
   if (!iso) return '';
   const d = new Date(iso);
@@ -1049,8 +959,7 @@ function queueLabel(s: {
   totalCount: number;
 }): string {
   if (s.failedCount > 0) return `File d’attente — ${s.failedCount} échec(s)`;
-  if (s.activeCount > 0)
-    return `${s.activeCount} en cours · ${s.pct}% · ${formatSpeed(s.speedBps)}`;
+  if (s.activeCount > 0) return `${s.activeCount} en cours · ${s.pct}% · ${formatSpeed(s.speedBps)}`;
   return `${s.doneCount}/${s.totalCount} terminé(s)`;
 }
 
@@ -1060,39 +969,50 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
   dimText: { textAlign: 'center', opacity: 0.6, fontSize: 14, lineHeight: 20 },
 
-  topBar: {
+  topBar: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#8886' },
+  crumbRow: { minHeight: 44, justifyContent: 'center' },
+  crumbs: { alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, gap: 6 },
+  crumb: { fontSize: 14, color: '#0a84ff', maxWidth: 180 },
+  crumbActive: { color: '#8e8e93', fontWeight: '700' },
+  sep: { opacity: 0.4, marginHorizontal: 2, fontSize: 14 },
+  actionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingRight: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#8886',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#8884',
   },
-  crumbScroll: { flex: 1 },
-  topAction: { paddingLeft: 12 },
-  topActionText: { fontSize: 12, color: '#0a84ff', fontWeight: '600' },
-  topActionOn: { color: '#fff', backgroundColor: '#0a84ff', paddingHorizontal: 6, borderRadius: 4 },
-  crumbs: { alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, gap: 6 },
-  moveCrumbs: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#8886' },
-  crumb: { fontSize: 13, color: '#0a84ff', maxWidth: 160 },
-  crumbActive: { color: '#8e8e93', fontWeight: '700' },
-  sep: { opacity: 0.4, marginHorizontal: 2 },
-  sortBtn: { fontSize: 12, color: '#0a84ff', fontWeight: '600' },
+  spacer: { flex: 1 },
+  tBtn: { paddingHorizontal: 12, paddingVertical: 8 },
+  tBtnText: { fontSize: 14, color: '#0a84ff', fontWeight: '700' },
+  filterInput: {
+    flex: 1,
+    fontSize: 15,
+    color: '#fff',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#888',
+    borderRadius: 8,
+  },
 
   actionBar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 16,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
     backgroundColor: '#0a84ff',
   },
   actionBarMove: { backgroundColor: '#1b5e20' },
-  abClose: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  abClose: { color: '#fff', fontSize: 17, fontWeight: '700' },
   abTitle: { color: '#fff', fontSize: 14, fontWeight: '600', flex: 1 },
-  abAction: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  abAction: { color: '#fff', fontSize: 14, fontWeight: '700' },
   abDanger: { color: '#ffd7d7' },
-  abDisabled: { opacity: 0.4 },
-  abPaste: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  abPaste: { color: '#fff', fontSize: 15, fontWeight: '800' },
+
+  moveCrumbs: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#8886' },
 
   opBar: {
     flexDirection: 'row',
@@ -1115,18 +1035,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     paddingHorizontal: 16,
-    paddingVertical: 13,
+    paddingVertical: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#8884',
   },
   rowMoving: { backgroundColor: 'rgba(27,94,32,0.12)' },
-  rowGhost: { opacity: 0.5 },
-  rowChild: { paddingLeft: 40, backgroundColor: 'rgba(128,128,128,0.06)' },
+  rowGhost: { opacity: 0.55 },
+  rowMain: { flex: 1 },
+  rowName: { flex: 1, fontSize: 15 },
+  rowMeta: { fontSize: 12, opacity: 0.55, marginTop: 3 },
+  folderIcon: { fontSize: 18 },
+  fileIcon: { width: 18, textAlign: 'center', opacity: 0.4, fontSize: 18 },
+  chevron: { fontSize: 20, opacity: 0.35 },
   sumBtn: { fontSize: 18, color: '#0a84ff', paddingHorizontal: 8 },
-  verHint: { fontSize: 11, opacity: 0.55, paddingHorizontal: 16, paddingVertical: 10 },
-  verTag: {
+  tag: {
     fontSize: 11,
-    opacity: 0.6,
+    opacity: 0.7,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#888',
     borderRadius: 6,
@@ -1134,14 +1058,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     overflow: 'hidden',
   },
-  verTagCurrent: { color: '#fff', backgroundColor: '#1b5e20', borderColor: '#1b5e20', opacity: 1 },
-  verTagDeleted: { color: '#fff', backgroundColor: '#b71c1c', borderColor: '#b71c1c', opacity: 1 },
-  rowMain: { flex: 1 },
-  rowName: { flex: 1, fontSize: 15 },
-  rowMeta: { fontSize: 12, opacity: 0.55, marginTop: 3 },
-  folderIcon: { fontSize: 18 },
-  fileIcon: { width: 18, textAlign: 'center', opacity: 0.4, fontSize: 18 },
-  chevron: { fontSize: 20, opacity: 0.35 },
+  tagDel: { color: '#fff', backgroundColor: '#b71c1c', borderColor: '#b71c1c', opacity: 1 },
   check: {
     width: 22,
     height: 22,
@@ -1191,4 +1108,3 @@ const styles = StyleSheet.create({
   },
   fabText: { color: '#fff', fontSize: 28, fontWeight: '700', marginTop: -2 },
 });
-

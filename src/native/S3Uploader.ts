@@ -167,6 +167,14 @@ export const S3Uploader = {
   deleteVersion(key: string, versionId: string): Promise<void> {
     return S3UploaderNative.deleteVersion(key, versionId);
   },
+  /** Supprime définitivement toutes les versions + marqueurs des clés. */
+  purgeKeys(keys: string[]): Promise<{ deleted: number }> {
+    return S3UploaderNative.purgeKeys(keys);
+  },
+  /** Restaure des objets « supprimés » (retire les delete markers de tête). */
+  restoreKeys(keys: string[]): Promise<{ restored: number }> {
+    return S3UploaderNative.restoreKeys(keys);
+  },
   /** Supprime toutes les versions non-courantes sous un préfixe. */
   purgeOldVersions(prefix: string): Promise<{ deleted: number }> {
     return S3UploaderNative.purgeOldVersions(prefix);
