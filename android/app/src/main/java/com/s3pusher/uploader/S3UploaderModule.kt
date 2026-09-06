@@ -349,10 +349,14 @@ class S3UploaderModule(private val reactContext: ReactApplicationContext) :
         prefix: String,
         keyMarker: String?,
         versionIdMarker: String?,
+        recursive: Boolean,
         promise: Promise,
     ) {
         withS3(promise) { s3, _ ->
-            val res = s3.listObjectVersions(prefix, keyMarker, versionIdMarker)
+            val res = s3.listObjectVersions(
+                prefix, keyMarker, versionIdMarker,
+                delimiter = if (recursive) "" else "/",
+            )
             promise.resolve(
                 Arguments.createMap().apply {
                     putArray("prefixes", Arguments.createArray().apply {

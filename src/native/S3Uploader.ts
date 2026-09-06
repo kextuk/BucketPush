@@ -144,16 +144,18 @@ export const S3Uploader = {
   prefixStats(prefix: string): Promise<{ totalBytes: number; objectCount: number }> {
     return S3UploaderNative.prefixStats(prefix);
   },
-  /** Liste les versions B2 (S3 `?versions`). */
+  /** Liste les versions B2 (S3 `?versions`). `recursive` = sans delimiter. */
   listObjectVersions(
     prefix: string,
     keyMarker?: string,
     versionIdMarker?: string,
+    recursive = false,
   ): Promise<VersionsResult> {
     return S3UploaderNative.listObjectVersions(
       prefix,
       keyMarker ?? null,
       versionIdMarker ?? null,
+      recursive,
     );
   },
   deleteVersion(key: string, versionId: string): Promise<void> {

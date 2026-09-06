@@ -109,15 +109,33 @@ export function BrowserScreen({ navigation }: Props) {
           .sort((a, b) => a.name.localeCompare(b.name));
       try {
         if (showVersions) {
-          const res = await S3Uploader.listObjectVersions(p, cursor?.km, cursor?.vm);
-          const markers = res.versions
-            .filter(v => v.key.endsWith('/') && v.key !== p)
-            .map(v => v.key);
-          const fs = toFolders(res.prefixes, markers);
-          const vr: VersionRow[] = res.versions
-            .filter(v => !v.key.endsWith('/'))
-            .map(v => ({ kind: 'version' as const, v, name: v.key.slice(p.length) }));
-          setFolders(prev => (more ? [...prev, ...fs] : fs));
+          // récursif (sans delimiter) : les dossiers sont dérivés des clés, donc
+          // même un dossier entièrement supprimé (que des delete markers) apparaît
+          const res = await S3Uploader.listObjectVersions(p, cursor?.km, cursor?.vm, true);
+          const subFolders = new Set<string>();
+          const vr: VersionRow[] = [];
+          for (const v of res.versions) {
+            if (v.key === p) continue; // marqueur du dossier courant lui-même
+            const rel = v.key.slice(p.length);
+            const slash = rel.indexOf('/');
+            if (slash >= 0) {
+              subFolders.add(p + rel.slice(0, slash + 1));
+            } else if (!v.key.endsWith('/')) {
+              vr.push({ kind: 'version', v, name: rel });
+            }
+          }
+          const fs: Folder[] = Array.from(subFolders)
+            .map(pfx => ({
+              kind: 'folder' as const,
+              prefix: pfx,
+              name: pfx.slice(p.length).replace(/\/$/, ''),
+            }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+          setFolders(prev => {
+            const all = more ? [...prev, ...fs] : fs;
+            const seen = new Set<string>();
+            return all.filter(f => (seen.has(f.prefix) ? false : seen.add(f.prefix)));
+          });
           setVersionRows(prev => (more ? [...prev, ...vr] : vr));
           setNextVer(
             res.nextKeyMarker || res.nextVersionIdMarker
