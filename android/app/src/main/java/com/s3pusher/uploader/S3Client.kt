@@ -165,6 +165,31 @@ class S3Client(
         }
     }
 
+    /** Totaux (octets, nb d'objets) sous un préfixe, paginé, sans delimiter. */
+    fun prefixTotals(prefix: String): Pair<Long, Long> {
+        var bytes = 0L
+        var count = 0L
+        var token: String? = null
+        do {
+            val query = buildMap {
+                put("list-type", "2")
+                put("max-keys", "1000")
+                if (prefix.isNotEmpty()) put("prefix", prefix)
+                if (token != null) put("continuation-token", token!!)
+            }
+            val url = withQuery(config.bucketUrl(), query)
+            execute(build("GET", url, config.canonicalBucketPath(), query,
+                SigV4Signer.EMPTY_SHA256, null)).use { r ->
+                val body = r.body?.string().orEmpty()
+                if (!r.isSuccessful) throw parseError(r, body, "ListObjectsV2 a échoué")
+                val res = parseListObjects(body)
+                res.objects.forEach { bytes += it.size; count++ }
+                token = res.nextToken
+            }
+        } while (token != null)
+        return bytes to count
+    }
+
     /** Toutes les clés sous un préfixe (sans delimiter), paginé. */
     fun listAllKeys(prefix: String): List<String> {
         val keys = ArrayList<String>()

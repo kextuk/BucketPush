@@ -30,8 +30,18 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Browser'>;
 
 type Folder = { kind: 'folder'; prefix: string; name: string };
 type FileRow = { kind: 'file'; entry: S3ListEntry; name: string };
-type VersionRow = { kind: 'version'; v: ObjectVersion; name: string };
-type Row = Folder | FileRow | VersionRow;
+type VersionRow = { kind: 'version'; v: ObjectVersion; name: string; child?: boolean };
+type VersionGroup = {
+  key: string;
+  name: string;
+  versions: ObjectVersion[];
+  latestIsDelete: boolean;
+  totalBytes: number;
+};
+type VGroupRow = { kind: 'vgroup'; group: VersionGroup };
+type Row = Folder | FileRow | VersionRow | VGroupRow;
+
+const verKey = (v: ObjectVersion) => `${v.key}\t${v.versionId}`;
 type Mode = 'browse' | 'select' | 'move';
 type SortMode = 'name' | 'size' | 'recent';
 type Cursor = { token?: string; km?: string; vm?: string };
@@ -54,6 +64,11 @@ export function BrowserScreen({ navigation }: Props) {
 
   const [mode, setMode] = useState<Mode>('browse');
   const [selected, setSelected] = useState<string[]>([]);
+  const [selVers, setSelVers] = useState<string[]>([]);
+  const [expanded, setExpanded] = useState<string[]>([]);
+  const [folderSizes, setFolderSizes] = useState<
+    Record<string, { bytes: number; count: number } | 'loading'>
+  >({});
   const [sortMode, setSortMode] = useState<SortMode>('name');
   const [op, setOp] = useState<
     { label: string; done: number; total: number; pct?: number } | null
@@ -177,29 +192,59 @@ export function BrowserScreen({ navigation }: Props) {
     return arr;
   }, [files, sortMode]);
 
-  const sortedVersions = useMemo(() => {
-    const arr = [...versionRows];
-    if (sortMode === 'size') arr.sort((a, b) => b.v.size - a.v.size);
-    else if (sortMode === 'recent') {
-      arr.sort(
-        (a, b) =>
-          (Date.parse(b.v.lastModified ?? '') || 0) -
-          (Date.parse(a.v.lastModified ?? '') || 0),
-      );
-    } else {
-      arr.sort(
-        (a, b) =>
-          a.name.localeCompare(b.name) ||
-          (Date.parse(b.v.lastModified ?? '') || 0) -
-            (Date.parse(a.v.lastModified ?? '') || 0),
-      );
+  // versions groupées par objet (petite arborescence)
+  const versionGroups = useMemo(() => {
+    const map = new Map<string, ObjectVersion[]>();
+    for (const r of versionRows) {
+      const a = map.get(r.v.key) ?? [];
+      a.push(r.v);
+      map.set(r.v.key, a);
     }
-    return arr;
-  }, [versionRows, sortMode]);
+    const groups: VersionGroup[] = [];
+    for (const [key, vs] of map) {
+      vs.sort(
+        (a, b) =>
+          (Date.parse(b.lastModified ?? '') || 0) - (Date.parse(a.lastModified ?? '') || 0),
+      );
+      groups.push({
+        key,
+        name: key.slice(prefix.length),
+        versions: vs,
+        latestIsDelete: vs[0]?.isDeleteMarker ?? false,
+        totalBytes: vs.reduce((s, v) => s + v.size, 0),
+      });
+    }
+    if (sortMode === 'size') groups.sort((a, b) => b.totalBytes - a.totalBytes);
+    else if (sortMode === 'recent') {
+      groups.sort(
+        (a, b) =>
+          (Date.parse(b.versions[0]?.lastModified ?? '') || 0) -
+          (Date.parse(a.versions[0]?.lastModified ?? '') || 0),
+      );
+    } else groups.sort((a, b) => a.name.localeCompare(b.name));
+    return groups;
+  }, [versionRows, prefix, sortMode]);
+
+  const versionDisplayRows = useMemo(() => {
+    const out: Row[] = [...folders];
+    for (const g of versionGroups) {
+      if (g.versions.length <= 1) {
+        out.push({ kind: 'version', v: g.versions[0], name: g.name });
+      } else {
+        out.push({ kind: 'vgroup', group: g });
+        if (expanded.includes(g.key)) {
+          for (const v of g.versions) {
+            out.push({ kind: 'version', v, name: g.name, child: true });
+          }
+        }
+      }
+    }
+    return out;
+  }, [folders, versionGroups, expanded]);
 
   const rows: Row[] = useMemo(
-    () => (showVersions ? [...folders, ...sortedVersions] : [...folders, ...sortedFiles]),
-    [showVersions, folders, sortedFiles, sortedVersions],
+    () => (showVersions ? versionDisplayRows : [...folders, ...sortedFiles]),
+    [showVersions, versionDisplayRows, folders, sortedFiles],
   );
 
   // en mode déplacement : on n'affiche que les dossiers (destinations) + les fichiers déplacés
@@ -216,6 +261,7 @@ export function BrowserScreen({ navigation }: Props) {
   const exitMode = () => {
     setMode('browse');
     setSelected([]);
+    setSelVers([]);
   };
   const toggle = (key: string) =>
     setSelected(prev => {
@@ -223,6 +269,19 @@ export function BrowserScreen({ navigation }: Props) {
       if (next.length === 0 && mode === 'select') setMode('browse');
       return next;
     });
+  const toggleVer = (v: ObjectVersion) => {
+    const id = verKey(v);
+    setMode('select');
+    setSelVers(prev => {
+      const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
+      if (next.length === 0) setMode('browse');
+      return next;
+    });
+  };
+  const selectAllOldVersions = () =>
+    setSelVers(versionRows.filter(r => !r.v.isLatest).map(r => verKey(r.v)));
+  const toggleExpand = (key: string) =>
+    setExpanded(prev => (prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]));
   const selectAll = () => setSelected(sortedFiles.map(f => f.entry.key));
 
   const onFilePress = (entry: S3ListEntry) => {
@@ -303,6 +362,56 @@ export function BrowserScreen({ navigation }: Props) {
     );
   };
 
+  const deleteSelectedVersions = () => {
+    const targets = versionRows
+      .filter(r => selVers.includes(verKey(r.v)))
+      .map(r => r.v);
+    if (!targets.length) return;
+    Alert.alert(
+      `Supprimer ${targets.length} version(s) ?`,
+      'Définitif. Supprimer un marqueur 🗑 restaure le fichier.',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Supprimer',
+          style: 'destructive',
+          onPress: () =>
+            runBatch('Suppression', targets.map(verKey), async id => {
+              const [k, vid] = id.split('\t');
+              await S3Uploader.deleteVersion(k, vid);
+            }),
+        },
+      ],
+      { cancelable: true },
+    );
+  };
+
+  const computeFolderSize = async (folderPrefix: string) => {
+    setFolderSizes(s => ({ ...s, [folderPrefix]: 'loading' }));
+    try {
+      const { totalBytes, objectCount } = await S3Uploader.prefixStats(folderPrefix);
+      setFolderSizes(s => ({ ...s, [folderPrefix]: { bytes: totalBytes, count: objectCount } }));
+    } catch {
+      setFolderSizes(s => {
+        const n = { ...s };
+        delete n[folderPrefix];
+        return n;
+      });
+    }
+  };
+
+  const showScopeSize = async (scopePrefix: string, label: string) => {
+    setOp({ label: 'Calcul de la taille', done: 0, total: 0 });
+    try {
+      const { totalBytes, objectCount } = await S3Uploader.prefixStats(scopePrefix);
+      Alert.alert(label, `${formatBytes(totalBytes)} · ${objectCount} objet(s)`);
+    } catch (e: any) {
+      Alert.alert('Échec', String(e?.message ?? e));
+    } finally {
+      setOp(null);
+    }
+  };
+
   const submitPrompt = (value: string) => {
     const p = prompt;
     setPrompt(null);
@@ -374,16 +483,23 @@ export function BrowserScreen({ navigation }: Props) {
     );
   };
 
-  const deleteVersionRow = (v: ObjectVersion) => {
+  const deleteOrRestore = (v: ObjectVersion) => {
+    const restore = v.isDeleteMarker && v.isLatest;
     Alert.alert(
-      v.isDeleteMarker ? 'Supprimer ce marqueur ?' : 'Supprimer cette version ?',
-      `${v.key}\n${v.isDeleteMarker ? 'marqueur de suppression' : formatBytes(v.size)} · ${shortDate(
-        v.lastModified,
-      )}`,
+      restore
+        ? 'Restaurer ce fichier ?'
+        : v.isDeleteMarker
+          ? 'Supprimer ce marqueur ?'
+          : 'Supprimer cette version ?',
+      restore
+        ? `${v.key}\nLe marqueur de suppression sera retiré, la version précédente redevient l’actuelle.`
+        : `${v.key}\n${v.isDeleteMarker ? 'marqueur de suppression' : formatBytes(v.size)} · ${shortDate(
+            v.lastModified,
+          )}`,
       [
         { text: 'Annuler', style: 'cancel' },
         {
-          text: 'Supprimer',
+          text: restore ? 'Restaurer' : 'Supprimer',
           style: 'destructive',
           onPress: async () => {
             setOp({ label: 'Suppression', done: 0, total: 0 });
@@ -498,7 +614,20 @@ export function BrowserScreen({ navigation }: Props) {
           <Pressable onPress={exitMode} hitSlop={10}>
             <Text style={styles.abClose}>✕</Text>
           </Pressable>
-          {mode === 'select' ? (
+          {mode === 'select' && showVersions ? (
+            <>
+              <Text style={styles.abTitle}>{selVers.length} version(s)</Text>
+              <Pressable onPress={selectAllOldVersions} hitSlop={8}>
+                <Text style={styles.abAction}>Anciennes</Text>
+              </Pressable>
+              <Pressable onPress={deleteSelectedVersions} hitSlop={8} disabled={!selVers.length}>
+                <Text
+                  style={[styles.abAction, styles.abDanger, !selVers.length && styles.abDisabled]}>
+                  Suppr.
+                </Text>
+              </Pressable>
+            </>
+          ) : mode === 'select' ? (
             <>
               <Text style={styles.abTitle}>{selected.length} sélectionné(s)</Text>
               <Pressable onPress={selectAll} hitSlop={8}>
@@ -589,9 +718,11 @@ export function BrowserScreen({ navigation }: Props) {
         keyExtractor={r =>
           r.kind === 'folder'
             ? `f:${r.prefix}`
-            : r.kind === 'version'
-              ? `v:${r.v.key}:${r.v.versionId}`
-              : `o:${r.entry.key}`
+            : r.kind === 'vgroup'
+              ? `g:${r.group.key}`
+              : r.kind === 'version'
+                ? `v:${r.v.key}:${r.v.versionId}`
+                : `o:${r.entry.key}`
         }
         contentContainerStyle={rows.length ? styles.listPad : styles.emptyWrap}
         refreshControl={
@@ -607,16 +738,69 @@ export function BrowserScreen({ navigation }: Props) {
                 mode === 'browse' && setFolderMenu({ prefix: item.prefix, name: item.name })
               }>
               <Text style={styles.folderIcon}>📁</Text>
-              <Text style={styles.rowName} numberOfLines={1}>
-                {item.name}
-              </Text>
+              <View style={styles.rowMain}>
+                <Text style={styles.rowName} numberOfLines={1}>
+                  {item.name}
+                </Text>
+                {folderSizes[item.prefix] && folderSizes[item.prefix] !== 'loading' ? (
+                  <Text style={styles.rowMeta}>
+                    {formatBytes((folderSizes[item.prefix] as { bytes: number }).bytes)} ·{' '}
+                    {(folderSizes[item.prefix] as { count: number }).count} obj.
+                  </Text>
+                ) : null}
+              </View>
+              {folderSizes[item.prefix] === 'loading' ? (
+                <ActivityIndicator size="small" />
+              ) : !folderSizes[item.prefix] ? (
+                <Pressable hitSlop={10} onPress={() => computeFolderSize(item.prefix)}>
+                  <Text style={styles.sumBtn}>∑</Text>
+                </Pressable>
+              ) : null}
               <Text style={styles.chevron}>›</Text>
+            </Pressable>
+          ) : item.kind === 'vgroup' ? (
+            <Pressable
+              style={[styles.row, item.group.latestIsDelete && styles.rowGhost]}
+              onPress={() => toggleExpand(item.group.key)}>
+              <Text style={styles.chevron}>
+                {expanded.includes(item.group.key) ? '▾' : '▸'}
+              </Text>
+              <View style={styles.rowMain}>
+                <Text style={styles.rowName} numberOfLines={1}>
+                  {item.group.name || baseName(item.group.key)}
+                </Text>
+                <Text style={styles.rowMeta}>
+                  {item.group.versions.length} versions ·{' '}
+                  {formatBytes(item.group.totalBytes)}
+                </Text>
+              </View>
+              <Text
+                style={[
+                  styles.verTag,
+                  item.group.latestIsDelete ? styles.verTagDeleted : styles.verTagCurrent,
+                ]}>
+                {item.group.latestIsDelete ? 'supprimé' : 'actuelle'}
+              </Text>
             </Pressable>
           ) : item.kind === 'version' ? (
             <Pressable
-              style={[styles.row, !item.v.isLatest && styles.rowGhost]}
-              onLongPress={() => deleteVersionRow(item.v)}>
-              <Text style={styles.fileIcon}>{item.v.isDeleteMarker ? '🗑' : '·'}</Text>
+              style={[
+                styles.row,
+                item.child && styles.rowChild,
+                !item.v.isLatest && styles.rowGhost,
+              ]}
+              onPress={() => toggleVer(item.v)}
+              onLongPress={() => deleteOrRestore(item.v)}>
+              {mode === 'select' ? (
+                <View
+                  style={[styles.check, selVers.includes(verKey(item.v)) && styles.checkOn]}>
+                  {selVers.includes(verKey(item.v)) ? (
+                    <Text style={styles.checkMark}>✓</Text>
+                  ) : null}
+                </View>
+              ) : (
+                <Text style={styles.fileIcon}>{item.v.isDeleteMarker ? '🗑' : '·'}</Text>
+              )}
               <View style={styles.rowMain}>
                 <Text style={styles.rowName} numberOfLines={1}>
                   {item.name || baseName(item.v.key)}
@@ -662,8 +846,8 @@ export function BrowserScreen({ navigation }: Props) {
         ListHeaderComponent={
           showVersions ? (
             <Text style={styles.verHint}>
-              Toutes les versions (anciennes et supprimées). Appui long = supprimer
-              définitivement.
+              Toutes les versions. Tape pour sélectionner, appui long = supprimer / restaurer.
+              {'\n'}Un fichier « supprimé » se restaure en retirant son marqueur 🗑.
             </Text>
           ) : undefined
         }
@@ -713,10 +897,20 @@ export function BrowserScreen({ navigation }: Props) {
 
       <ActionSheet
         visible={toolsMenu}
-        title="Nettoyage"
+        title="Outils"
         options={[
           {
+            label: 'Taille de ce dossier',
+            onPress: () =>
+              showScopeSize(prefix, prefix ? `/${prefix}` : 'Racine du bucket'),
+          },
+          {
+            label: 'Taille du dépôt',
+            onPress: () => showScopeSize('', 'Dépôt entier'),
+          },
+          {
             label: 'Purger les anciennes versions (dossier courant)',
+            destructive: true,
             onPress: () =>
               purgeVersions(prefix, prefix ? `/${prefix}` : 'racine du bucket'),
           },
@@ -869,6 +1063,8 @@ const styles = StyleSheet.create({
   },
   rowMoving: { backgroundColor: 'rgba(27,94,32,0.12)' },
   rowGhost: { opacity: 0.5 },
+  rowChild: { paddingLeft: 40, backgroundColor: 'rgba(128,128,128,0.06)' },
+  sumBtn: { fontSize: 18, color: '#0a84ff', paddingHorizontal: 8 },
   verHint: { fontSize: 11, opacity: 0.55, paddingHorizontal: 16, paddingVertical: 10 },
   verTag: {
     fontSize: 11,

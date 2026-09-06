@@ -328,6 +328,20 @@ class S3UploaderModule(private val reactContext: ReactApplicationContext) :
         }
     }
 
+    /** Taille totale et nombre d'objets sous un préfixe. Résout `{ totalBytes, objectCount }`. */
+    @ReactMethod
+    fun prefixStats(prefix: String, promise: Promise) {
+        withS3(promise) { s3, _ ->
+            val (bytes, count) = s3.prefixTotals(prefix)
+            promise.resolve(
+                Arguments.createMap().apply {
+                    putDouble("totalBytes", bytes.toDouble())
+                    putDouble("objectCount", count.toDouble())
+                },
+            )
+        }
+    }
+
     @ReactMethod
     fun listObjectVersions(
         prefix: String,
