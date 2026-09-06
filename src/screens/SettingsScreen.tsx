@@ -18,18 +18,21 @@ import { applyNativeConfig } from '../../App';
 import {
   DEFAULT_CONFIG,
   clearCredentials,
-  loadConfig,
+  getActiveProfile,
+  getProfile,
   readCredentials,
-  saveConfig,
-  validateConfig,
-  type AppConfig,
+  saveProfile,
+  toNativeConfig,
+  validateProfile,
+  type Profile,
 } from '../config';
 import { S3Uploader } from '../native/S3Uploader';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
-export function SettingsScreen({ navigation }: Props) {
-  const [cfg, setCfg] = useState<AppConfig>(DEFAULT_CONFIG);
+export function SettingsScreen({ navigation, route }: Props) {
+  const profileId = route.params?.profileId;
+  const [cfg, setCfg] = useState<Profile>(DEFAULT_CONFIG);
   const [accessKeyId, setAccessKeyId] = useState('');
   const [secretAccessKey, setSecretAccessKey] = useState('');
   const [testing, setTesting] = useState(false);
@@ -37,22 +40,25 @@ export function SettingsScreen({ navigation }: Props) {
 
   useEffect(() => {
     (async () => {
-      const c = await loadConfig();
-      setCfg(c);
-      const creds = await readCredentials();
+      const p = (profileId ? await getProfile(profileId) : await getActiveProfile()) ?? {
+        ...DEFAULT_CONFIG,
+        name: 'Nouveau profil',
+      };
+      setCfg(p);
+      const creds = await readCredentials(p.id);
       if (creds) {
         setAccessKeyId(creds.accessKeyId);
         setSecretAccessKey(creds.secretAccessKey);
       }
       setLoaded(true);
     })();
-  }, []);
+  }, [profileId]);
 
-  const set = <K extends keyof AppConfig>(k: K, v: AppConfig[K]) =>
+  const set = <K extends keyof Profile>(k: K, v: Profile[K]) =>
     setCfg(prev => ({ ...prev, [k]: v }));
 
   const persist = async (): Promise<boolean> => {
-    const errors = validateConfig(cfg);
+    const errors = validateProfile(cfg);
     if (!accessKeyId.trim() || !secretAccessKey.trim()) {
       errors.push('Access key et secret requis.');
     }
@@ -60,17 +66,20 @@ export function SettingsScreen({ navigation }: Props) {
       Alert.alert('Champs invalides', errors.join('\n'));
       return false;
     }
-    await saveConfig(
-      { ...cfg, hasCredentials: true },
-      { accessKeyId: accessKeyId.trim(), secretAccessKey: secretAccessKey.trim() },
-    );
-    await applyNativeConfig();
+    await saveProfile(cfg, {
+      accessKeyId: accessKeyId.trim(),
+      secretAccessKey: secretAccessKey.trim(),
+    });
+    setCfg(prev => ({ ...prev, hasCredentials: true }));
+    // si ce profil est l'actif, pousse sa config au moteur natif
+    const active = await getActiveProfile();
+    if (active?.id === cfg.id) await applyNativeConfig();
     return true;
   };
 
   const onSave = async () => {
     if (await persist()) {
-      Alert.alert('Enregistré', 'Configuration mise à jour.');
+      Alert.alert('Enregistré', `Profil « ${cfg.name} » mis à jour.`);
       navigation.goBack();
     }
   };
@@ -79,7 +88,11 @@ export function SettingsScreen({ navigation }: Props) {
     if (!(await persist())) return;
     setTesting(true);
     try {
+      // teste CE profil, puis restaure la config du profil actif
+      const native = await toNativeConfig(cfg);
+      if (native) await S3Uploader.configure(native);
       const res = await S3Uploader.testConnection();
+      await applyNativeConfig();
       Alert.alert(
         res.ok ? 'Connexion OK' : 'Échec',
         res.ok ? 'Le bucket est accessible.' : res.error ?? 'Erreur inconnue',
@@ -92,7 +105,7 @@ export function SettingsScreen({ navigation }: Props) {
   };
 
   const onForget = async () => {
-    await clearCredentials();
+    await clearCredentials(cfg.id);
     setAccessKeyId('');
     setSecretAccessKey('');
     set('hasCredentials', false);
@@ -106,6 +119,15 @@ export function SettingsScreen({ navigation }: Props) {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <Field label="Nom du profil" hint="ex. Scaleway prod, MinIO maison">
+          <TextInput
+            style={styles.input}
+            value={cfg.name}
+            onChangeText={t => set('name', t)}
+            placeholder="Nom du profil"
+          />
+        </Field>
+
         <Field label="Endpoint" hint="ex. https://s3.fr-par.scw.cloud">
           <TextInput
             style={styles.input}

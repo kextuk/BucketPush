@@ -16,7 +16,7 @@ import type { RootStackParamList } from '../../App';
 import { applyNativeConfig } from '../../App';
 import { useUploader, type UiItem } from '../useUploader';
 import { S3Uploader } from '../native/S3Uploader';
-import { loadConfig } from '../config';
+import { getActiveProfile, loadConfig } from '../config';
 import { buildKey, dedupeKeys } from '../keys';
 import { formatBytes, formatEta, formatSpeed, percent } from '../format';
 
@@ -27,6 +27,7 @@ export function QueueScreen({ navigation }: Props) {
     useUploader();
   const [busy, setBusy] = useState(false);
   const [configured, setConfigured] = useState(true);
+  const [profileName, setProfileName] = useState('');
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -36,8 +37,8 @@ export function QueueScreen({ navigation }: Props) {
           <Pressable onPress={() => navigation.navigate('Browser')} hitSlop={12}>
             <Text style={styles.headerBtn}>Parcourir</Text>
           </Pressable>
-          <Pressable onPress={() => navigation.navigate('Settings')} hitSlop={12}>
-            <Text style={styles.headerBtn}>Config</Text>
+          <Pressable onPress={() => navigation.navigate('Profiles')} hitSlop={12}>
+            <Text style={styles.headerBtn}>Profils</Text>
           </Pressable>
         </View>
       ),
@@ -49,6 +50,7 @@ export function QueueScreen({ navigation }: Props) {
       (async () => {
         const ok = await applyNativeConfig();
         setConfigured(ok);
+        setProfileName((await getActiveProfile())?.name ?? '');
         hydrate();
       })();
     }, [hydrate]),
@@ -59,7 +61,10 @@ export function QueueScreen({ navigation }: Props) {
       setBusy(true);
       const cfg = await loadConfig();
       if (!cfg.endpoint || !cfg.bucket || !cfg.hasCredentials) {
-        Alert.alert('Configuration incomplète', 'Renseigne endpoint, bucket et clés dans Config.');
+        Alert.alert(
+          'Profil incomplet',
+          'Choisis ou complète un profil S3 (endpoint, bucket, clés) dans « Profils ».',
+        );
         return;
       }
       const picked = await pick({
@@ -141,15 +146,20 @@ export function QueueScreen({ navigation }: Props) {
   return (
     <View style={styles.container}>
       {!configured && (
-        <Pressable style={styles.banner} onPress={() => navigation.navigate('Settings')}>
+        <Pressable style={styles.banner} onPress={() => navigation.navigate('Profiles')}>
           <Text style={styles.bannerText}>
-            Configuration S3 manquante ou incomplète — appuie pour la renseigner.
+            Aucun profil S3 actif (ou clés manquantes) — appuie pour choisir un profil.
           </Text>
         </Pressable>
       )}
 
       <View style={styles.toolbar}>
-        <Text style={styles.status}>File : {labelForQueue(queueStatus)}</Text>
+        <Pressable onPress={() => navigation.navigate('Profiles')}>
+          <Text style={styles.status}>
+            {profileName ? `${profileName} · ` : ''}
+            {labelForQueue(queueStatus)}
+          </Text>
+        </Pressable>
         <View style={styles.toolbarBtns}>
           {anyActive && queueStatus !== 'paused' ? (
             <Pressable style={styles.btn} onPress={pause}>

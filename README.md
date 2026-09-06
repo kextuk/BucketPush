@@ -81,12 +81,15 @@ en est le portage ligne à ligne. Tests Kotlin : `SigV4SignerTest` (vecteurs AWS
 ```
 src/
   native/S3Uploader.ts     Pont typé vers le module natif + événements
-  config.ts                Charge/enregistre la config (AsyncStorage + Keychain)
+  profiles.ts              Logique pure des profils de connexion (test unitaire)
+  config.ts                Trousseau : profils S3 + profil actif + credentials par profil
   keys.ts                  Génération des clés S3 (préfixe, horodatage, anti-collision)
   format.ts                Octets / débit (EWMA) / ETA
   useUploader.ts           Hook : état de la file, abonnement aux événements natifs
   screens/QueueScreen.tsx  File d'attente + ajout de fichiers
-  screens/SettingsScreen.tsx  Configuration S3
+  screens/ProfilesScreen.tsx  Gestion des profils (créer / basculer / dupliquer / supprimer)
+  screens/SettingsScreen.tsx  Édition d'un profil S3
+  screens/BrowserScreen.tsx   Navigateur de bucket (lecture + suppression)
 
 android/app/src/main/java/com/s3pusher/uploader/
   S3UploaderModule.kt      @ReactMethod : configure / enqueue / pause / resume / cancel / …

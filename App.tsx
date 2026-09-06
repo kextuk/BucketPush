@@ -11,12 +11,14 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueueScreen } from './src/screens/QueueScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { BrowserScreen } from './src/screens/BrowserScreen';
+import { ProfilesScreen } from './src/screens/ProfilesScreen';
 import { loadConfig, toNativeConfig } from './src/config';
 import { S3Uploader } from './src/native/S3Uploader';
 
 export type RootStackParamList = {
   Queue: undefined;
-  Settings: undefined;
+  Profiles: undefined;
+  Settings: { profileId?: string } | undefined;
   Browser: undefined;
 };
 
@@ -57,9 +59,14 @@ function App(): React.JSX.Element {
             options={{ title: 'S3 Pusher' }}
           />
           <Stack.Screen
+            name="Profiles"
+            component={ProfilesScreen}
+            options={{ title: 'Profils S3' }}
+          />
+          <Stack.Screen
             name="Settings"
             component={SettingsScreen}
-            options={{ title: 'Configuration' }}
+            options={{ title: 'Profil S3' }}
           />
           <Stack.Screen
             name="Browser"
