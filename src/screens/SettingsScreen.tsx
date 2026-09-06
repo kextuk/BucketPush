@@ -27,6 +27,7 @@ import {
   type Profile,
 } from '../config';
 import { S3Uploader } from '../native/S3Uploader';
+import { getLangPref, setLangPref, t, type LangPref } from '../i18n';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
@@ -42,7 +43,7 @@ export function SettingsScreen({ navigation, route }: Props) {
     (async () => {
       const p = (profileId ? await getProfile(profileId) : await getActiveProfile()) ?? {
         ...DEFAULT_CONFIG,
-        name: 'Nouveau profil',
+        name: t('profiles.newName'),
       };
       setCfg(p);
       const creds = await readCredentials(p.id);
@@ -60,10 +61,10 @@ export function SettingsScreen({ navigation, route }: Props) {
   const persist = async (): Promise<boolean> => {
     const errors = validateProfile(cfg);
     if (!accessKeyId.trim() || !secretAccessKey.trim()) {
-      errors.push('Access key et secret requis.');
+      errors.push('settings.credsRequired');
     }
     if (errors.length) {
-      Alert.alert('Champs invalides', errors.join('\n'));
+      Alert.alert(t('settings.badFields'), errors.map(k => t(k)).join('\n'));
       return false;
     }
     await saveProfile(cfg, {
@@ -79,7 +80,7 @@ export function SettingsScreen({ navigation, route }: Props) {
 
   const onSave = async () => {
     if (await persist()) {
-      Alert.alert('Enregistré', `Profil « ${cfg.name} » mis à jour.`);
+      Alert.alert(t('settings.saved'), t('settings.savedBody', { name: cfg.name }));
       navigation.goBack();
     }
   };
@@ -94,11 +95,11 @@ export function SettingsScreen({ navigation, route }: Props) {
       const res = await S3Uploader.testConnection();
       await applyNativeConfig();
       Alert.alert(
-        res.ok ? 'Connexion OK' : 'Échec',
-        res.ok ? 'Le bucket est accessible.' : res.error ?? 'Erreur inconnue',
+        res.ok ? t('settings.connOk') : t('common.failure'),
+        res.ok ? t('settings.connOkBody') : res.error ?? t('common.error'),
       );
     } catch (e: any) {
-      Alert.alert('Échec', String(e?.message ?? e));
+      Alert.alert(t('common.failure'), String(e?.message ?? e));
     } finally {
       setTesting(false);
     }
@@ -109,7 +110,7 @@ export function SettingsScreen({ navigation, route }: Props) {
     setAccessKeyId('');
     setSecretAccessKey('');
     set('hasCredentials', false);
-    Alert.alert('Clés effacées');
+    Alert.alert(t('settings.keysCleared'));
   };
 
   if (!loaded) return <View style={styles.container} />;
@@ -119,16 +120,16 @@ export function SettingsScreen({ navigation, route }: Props) {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Field label="Nom du profil" hint="ex. Scaleway prod, MinIO maison">
+        <Field label={t('settings.name')} hint={t('settings.nameHint')}>
           <TextInput
             style={styles.input}
             value={cfg.name}
-            onChangeText={t => set('name', t)}
-            placeholder="Nom du profil"
+            onChangeText={v => set('name', v)}
+            placeholder={t('settings.namePlaceholder')}
           />
         </Field>
 
-        <Field label="Endpoint" hint="ex. https://s3.fr-par.scw.cloud">
+        <Field label={t('settings.endpoint')} hint={t('settings.endpointHint')}>
           <TextInput
             style={styles.input}
             autoCapitalize="none"
@@ -136,31 +137,31 @@ export function SettingsScreen({ navigation, route }: Props) {
             keyboardType="url"
             placeholder="https://…"
             value={cfg.endpoint}
-            onChangeText={t => set('endpoint', t)}
+            onChangeText={v => set('endpoint', v)}
           />
         </Field>
 
-        <Field label="Bucket">
+        <Field label={t('settings.bucket')}>
           <TextInput
             style={styles.input}
             autoCapitalize="none"
             autoCorrect={false}
             value={cfg.bucket}
-            onChangeText={t => set('bucket', t)}
+            onChangeText={v => set('bucket', v)}
           />
         </Field>
 
-        <Field label="Préfixe de clé (dossier)" hint="optionnel, ex. sauvegardes/2026">
+        <Field label={t('settings.keyPrefix')} hint={t('settings.keyPrefixHint')}>
           <TextInput
             style={styles.input}
             autoCapitalize="none"
             autoCorrect={false}
             value={cfg.keyPrefix}
-            onChangeText={t => set('keyPrefix', t)}
+            onChangeText={v => set('keyPrefix', v)}
           />
         </Field>
 
-        <Field label="Access key ID">
+        <Field label={t('settings.accessKeyId')}>
           <TextInput
             style={styles.input}
             autoCapitalize="none"
@@ -170,7 +171,7 @@ export function SettingsScreen({ navigation, route }: Props) {
           />
         </Field>
 
-        <Field label="Secret access key">
+        <Field label={t('settings.secret')}>
           <TextInput
             style={styles.input}
             autoCapitalize="none"
@@ -181,83 +182,98 @@ export function SettingsScreen({ navigation, route }: Props) {
           />
         </Field>
 
-        <Row label="Path-style (bucket dans l'URL)" hint="requis par la plupart des S3-compatibles">
+        <Row label={t('settings.pathStyle')} hint={t('settings.pathStyleHint')}>
           <Switch
             value={cfg.forcePathStyle}
             onValueChange={v => set('forcePathStyle', v)}
           />
         </Row>
 
-        <Row label="Wi-Fi uniquement">
+        <Row label={t('settings.wifiOnly')}>
           <Switch value={cfg.wifiOnly} onValueChange={v => set('wifiOnly', v)} />
         </Row>
 
         <Row
-          label="Ne pas ré-uploader si déjà sur le serveur"
-          hint="HEAD avant chaque upload ; l'objet existant n'est jamais touché">
+          label={t('settings.skipExisting')}
+          hint={t('settings.skipExistingHint')}>
           <Switch value={cfg.skipExisting} onValueChange={v => set('skipExisting', v)} />
         </Row>
 
-        <Row label="Horodater les clés (anti-écrasement)">
+        <Row label={t('settings.timestampKeys')}>
           <Switch
             value={cfg.timestampKeys}
             onValueChange={v => set('timestampKeys', v)}
           />
         </Row>
 
-        <Text style={styles.section}>Avancé</Text>
+        <Row label={t('settings.language')}>
+          <View style={styles.langRow}>
+            {(['auto', 'fr', 'en'] as LangPref[]).map(l => (
+              <Pressable
+                key={l}
+                onPress={() => setLangPref(l)}
+                style={[styles.langBtn, getLangPref() === l && styles.langBtnOn]}>
+                <Text style={[styles.langTxt, getLangPref() === l && styles.langTxtOn]}>
+                  {l === 'auto' ? t('settings.langAuto') : l === 'fr' ? 'FR' : 'EN'}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </Row>
 
-        <Field label="Region (SigV4)" hint="vide = dérivée de l'endpoint (ex. us-west-004)">
+        <Text style={styles.section}>{t('settings.advanced')}</Text>
+
+        <Field label={t('settings.region')} hint={t('settings.regionHint')}>
           <TextInput
             style={styles.input}
             autoCapitalize="none"
             autoCorrect={false}
             placeholder="auto"
             value={cfg.region ?? ''}
-            onChangeText={t => set('region', t)}
+            onChangeText={v => set('region', v)}
           />
         </Field>
 
-        <Field label="Taille de part (MiB)" hint="vide = adaptatif (32 MiB, agrandi si besoin)">
+        <Field label={t('settings.partSize')} hint={t('settings.partSizeHint')}>
           <TextInput
             style={styles.input}
             keyboardType="number-pad"
             value={cfg.partSizeMiB != null ? String(cfg.partSizeMiB) : ''}
-            onChangeText={t => set('partSizeMiB', t ? Math.max(5, parseInt(t, 10) || 0) : undefined)}
+            onChangeText={v => set('partSizeMiB', v ? Math.max(5, parseInt(v, 10) || 0) : undefined)}
           />
         </Field>
 
-        <Field label="Parts en parallèle" hint="défaut 2">
+        <Field label={t('settings.parallelParts')} hint={t('settings.parallelPartsHint')}>
           <TextInput
             style={styles.input}
             keyboardType="number-pad"
             value={String(cfg.maxConcurrentParts ?? 2)}
-            onChangeText={t =>
-              set('maxConcurrentParts', Math.min(8, Math.max(1, parseInt(t, 10) || 2)))
+            onChangeText={v =>
+              set('maxConcurrentParts', Math.min(8, Math.max(1, parseInt(v, 10) || 2)))
             }
           />
         </Field>
 
-        <Field label="Fichiers en parallèle" hint="défaut 1 (recommandé pour très gros fichiers)">
+        <Field label={t('settings.parallelFiles')} hint={t('settings.parallelFilesHint')}>
           <TextInput
             style={styles.input}
             keyboardType="number-pad"
             value={String(cfg.maxConcurrentFiles ?? 1)}
-            onChangeText={t =>
-              set('maxConcurrentFiles', Math.min(4, Math.max(1, parseInt(t, 10) || 1)))
+            onChangeText={v =>
+              set('maxConcurrentFiles', Math.min(4, Math.max(1, parseInt(v, 10) || 1)))
             }
           />
         </Field>
 
         <Field
-          label="Déplacements en parallèle"
-          hint="défaut 4 ; monte à 8‑10 si ton fournisseur l'encaisse (sinon 503)">
+          label={t('settings.moveConcurrency')}
+          hint={t('settings.moveConcurrencyHint')}>
           <TextInput
             style={styles.input}
             keyboardType="number-pad"
             value={String(cfg.moveConcurrency ?? 4)}
-            onChangeText={t =>
-              set('moveConcurrency', Math.min(16, Math.max(1, parseInt(t, 10) || 4)))
+            onChangeText={v =>
+              set('moveConcurrency', Math.min(16, Math.max(1, parseInt(v, 10) || 4)))
             }
           />
         </Field>
@@ -265,16 +281,16 @@ export function SettingsScreen({ navigation, route }: Props) {
         <View style={styles.actions}>
           <Pressable style={[styles.btn, styles.btnGhost]} onPress={onTest} disabled={testing}>
             <Text style={styles.btnGhostText}>
-              {testing ? 'Test…' : 'Tester la connexion'}
+              {testing ? t('settings.testing') : t('settings.testConn')}
             </Text>
           </Pressable>
           <Pressable style={styles.btn} onPress={onSave}>
-            <Text style={styles.btnText}>Enregistrer</Text>
+            <Text style={styles.btnText}>{t('common.save')}</Text>
           </Pressable>
         </View>
 
         <Pressable style={styles.forget} onPress={onForget}>
-          <Text style={styles.forgetText}>Effacer les clés stockées</Text>
+          <Text style={styles.forgetText}>{t('settings.forgetKeys')}</Text>
         </Pressable>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -355,4 +371,15 @@ const styles = StyleSheet.create({
   btnGhostText: { color: '#0a84ff', fontWeight: '700', fontSize: 15 },
   forget: { marginTop: 24, alignItems: 'center' },
   forgetText: { color: '#c62828', fontSize: 13 },
+  langRow: { flexDirection: 'row', gap: 6 },
+  langBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#0a84ff',
+  },
+  langBtnOn: { backgroundColor: '#0a84ff' },
+  langTxt: { color: '#0a84ff', fontSize: 12, fontWeight: '700' },
+  langTxtOn: { color: '#fff' },
 });

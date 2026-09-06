@@ -7,6 +7,7 @@ import {
   type UploadItemInput,
 } from './native/S3Uploader';
 import { dedupeKeys, normalizePrefix, sanitizeSegment } from './keys';
+import { t } from './i18n';
 
 /** Assemble une clé S3 : `<prefixe>/<reste>` (prefixe éventuellement vide). */
 export function joinKey(prefix: string, rest: string): string {
@@ -99,11 +100,9 @@ export async function downloadTo(items: DownloadItem[]): Promise<DownloadResult 
 
 export function summarizeEnqueue(res: EnqueueResult): string | null {
   const skipped = res.skippedExisting + res.skippedInQueue;
-  if (!skipped) return res.queued ? `${res.queued} fichier(s) ajouté(s).` : null;
+  if (!skipped) return res.queued ? t('queue.summaryAdded', { n: res.queued }) : null;
   const bits: string[] = [];
-  if (res.skippedExisting) bits.push(`${res.skippedExisting} déjà en ligne`);
-  if (res.skippedInQueue) bits.push(`${res.skippedInQueue} déjà dans la file`);
-  return (
-    `${res.queued} ajouté(s), ${skipped} ignoré(s) (${bits.join(', ')}).`
-  );
+  if (res.skippedExisting) bits.push(t('enqueue.skippedOnline', { n: res.skippedExisting }));
+  if (res.skippedInQueue) bits.push(t('enqueue.skippedInQueue', { n: res.skippedInQueue }));
+  return t('enqueue.summary', { added: res.queued, skipped, bits: bits.join(', ') });
 }

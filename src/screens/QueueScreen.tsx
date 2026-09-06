@@ -14,6 +14,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../App';
 import { useUploader, type UiItem } from '../useUploader';
 import { getActiveProfile } from '../config';
+import { t } from '../i18n';
 import { formatBytes, formatEta, formatSpeed, percent } from '../format';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Queue'>;
@@ -28,7 +29,7 @@ export function QueueScreen({ navigation }: Props) {
       // eslint-disable-next-line react/no-unstable-nested-components
       headerRight: () => (
         <Pressable onPress={() => navigation.navigate('Profiles')} hitSlop={12}>
-          <Text style={styles.headerBtn}>Profils</Text>
+          <Text style={styles.headerBtn}>{t('header.profiles')}</Text>
         </Pressable>
       ),
     });
@@ -52,22 +53,22 @@ export function QueueScreen({ navigation }: Props) {
       }[] = [];
       if (item.status === 'uploading' || item.status === 'queued') {
         actions.push({
-          text: 'Annuler l’upload',
+          text: t('queue.cancelUpload'),
           style: 'destructive',
           onPress: () => cancel(item.id),
         });
       }
       if (item.status === 'failed' || item.status === 'canceled') {
-        actions.push({ text: 'Réessayer', onPress: () => retry(item.id) });
+        actions.push({ text: t('common.retry'), onPress: () => retry(item.id) });
       }
       if (item.status === 'skipped') {
         actions.push({
-          text: 'Forcer l’upload (écrase)',
+          text: t('queue.forceUpload'),
           style: 'destructive',
           onPress: () => retry(item.id),
         });
       }
-      actions.push({ text: 'Fermer', style: 'cancel' });
+      actions.push({ text: t('common.close'), style: 'cancel' });
       Alert.alert(item.displayName, item.error ?? item.key, actions, { cancelable: true });
     },
     [cancel, retry],
@@ -87,15 +88,15 @@ export function QueueScreen({ navigation }: Props) {
         <View style={styles.toolbarBtns}>
           {anyActive && queueStatus !== 'paused' ? (
             <Pressable style={styles.btn} onPress={pause}>
-              <Text style={styles.btnText}>Pause</Text>
+              <Text style={styles.btnText}>{t('queue.pause')}</Text>
             </Pressable>
           ) : (
             <Pressable style={styles.btn} onPress={resume}>
-              <Text style={styles.btnText}>Reprendre</Text>
+              <Text style={styles.btnText}>{t('queue.resume')}</Text>
             </Pressable>
           )}
           <Pressable style={styles.btn} onPress={clearCompleted}>
-            <Text style={styles.btnText}>Nettoyer</Text>
+            <Text style={styles.btnText}>{t('queue.clean')}</Text>
           </Pressable>
         </View>
       </View>
@@ -106,9 +107,7 @@ export function QueueScreen({ navigation }: Props) {
         contentContainerStyle={items.length ? styles.listPad : styles.emptyWrap}
         refreshControl={<RefreshControl refreshing={false} onRefresh={hydrate} />}
         ListEmptyComponent={
-          <Text style={styles.empty}>
-            Rien dans la file. Ajoute des fichiers depuis le navigateur.
-          </Text>
+          <Text style={styles.empty}>{t('queue.empty')}</Text>
         }
         renderItem={({ item }) => <Row item={item} onPress={() => onItemPress(item)} />}
       />
@@ -138,7 +137,7 @@ function Row({ item, onPress }: { item: UiItem; onPress: () => void }) {
           {item.status === 'uploading'
             ? `${formatSpeed(item.speedBps)} · ${formatEta(item.etaSeconds)}`
             : item.partsTotal
-              ? `${item.partsCompleted}/${item.partsTotal} parts`
+              ? t('item.parts', { done: item.partsCompleted, total: item.partsTotal })
               : ''}
         </Text>
       </View>
@@ -152,27 +151,15 @@ function Row({ item, onPress }: { item: UiItem; onPress: () => void }) {
 }
 
 function labelForQueue(s: string) {
-  return s === 'running' ? 'en cours' : s === 'paused' ? 'en pause' : 'au repos';
+  return s === 'running'
+    ? t('queue.status.running')
+    : s === 'paused'
+      ? t('queue.status.paused')
+      : t('queue.status.idle');
 }
 function labelForItem(s: string) {
-  switch (s) {
-    case 'queued':
-      return 'en attente';
-    case 'uploading':
-      return 'en cours';
-    case 'completed':
-      return 'terminé';
-    case 'failed':
-      return 'échec';
-    case 'canceled':
-      return 'annulé';
-    case 'paused':
-      return 'pause';
-    case 'skipped':
-      return 'déjà en ligne';
-    default:
-      return s;
-  }
+  const k = `item.${s}`;
+  return t(k) === k ? s : t(k);
 }
 function badgeStyle(s: string) {
   if (s === 'completed') return { backgroundColor: '#1b5e20', color: '#fff' };

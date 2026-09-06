@@ -14,6 +14,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../App';
 import { S3Uploader, type ObjectVersion } from '../native/S3Uploader';
 import { formatBytes } from '../format';
+import { t } from '../i18n';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Versions'>;
 
@@ -60,12 +61,12 @@ export function VersionsScreen({ route }: Props) {
 
   const removeOne = (v: ObjectVersion) => {
     Alert.alert(
-      'Supprimer cette version ?',
+      t('ver.deleteVersionQ'),
       `${formatBytes(v.size)} · ${shortDateTime(v.lastModified)}`,
       [
-        { text: 'Annuler', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Supprimer',
+          text: t('common.delete'),
           style: 'destructive',
           onPress: async () => {
             setBusy(true);
@@ -73,7 +74,7 @@ export function VersionsScreen({ route }: Props) {
               await S3Uploader.deleteVersion(v.key, v.versionId);
               await load();
             } catch (e: any) {
-              Alert.alert('Échec', String(e?.message ?? e));
+              Alert.alert(t('common.failure'), String(e?.message ?? e));
             } finally {
               setBusy(false);
             }
@@ -88,12 +89,12 @@ export function VersionsScreen({ route }: Props) {
     const olds = versions.filter(v => !v.isLatest).length;
     if (!olds) return;
     Alert.alert(
-      'Purger les anciennes versions ?',
-      `${olds} version(s) non courante(s) seront supprimées.`,
+      t('ver.purgeQ'),
+      t('ver.purgeBody', { n: olds }),
       [
-        { text: 'Annuler', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Purger',
+          text: t('purge.btn2'),
           style: 'destructive',
           onPress: async () => {
             setBusy(true);
@@ -127,7 +128,7 @@ export function VersionsScreen({ route }: Props) {
         onRefresh={load}
         refreshing={loading}
         ListEmptyComponent={
-          loading ? undefined : <Text style={styles.dim}>Aucune version</Text>
+          loading ? undefined : <Text style={styles.dim}>{t('ver.hintNoVersions')}</Text>
         }
         renderItem={({ item }) => (
           <Pressable
@@ -137,14 +138,14 @@ export function VersionsScreen({ route }: Props) {
             <View style={styles.rowMain}>
               <Text style={styles.line1}>
                 {formatBytes(item.size)}
-                {item.isDeleteMarker ? '  (marqueur de suppression)' : ''}
+                {item.isDeleteMarker ? `  (${t('ver.deleteMarker')})` : ''}
               </Text>
               <Text style={styles.line2}>{shortDateTime(item.lastModified)}</Text>
             </View>
             {item.isLatest ? (
-              <Text style={styles.badge}>actuelle</Text>
+              <Text style={styles.badge}>{t('ver.current')}</Text>
             ) : (
-              <Text style={styles.del}>supprimer</Text>
+              <Text style={styles.del}>{t('common.delete')}</Text>
             )}
           </Pressable>
         )}
@@ -155,7 +156,7 @@ export function VersionsScreen({ route }: Props) {
           {busy ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.purgeText}>Purger {oldCount} ancienne(s) version(s)</Text>
+            <Text style={styles.purgeText}>{t('ver.purgeBtn', { n: oldCount })}</Text>
           )}
         </Pressable>
       ) : null}

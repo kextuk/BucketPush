@@ -100,17 +100,17 @@ describe('deriveRegion', () => {
 });
 
 describe('validateProfile', () => {
-  const base = { ...blankProfile('P'), endpoint: 'https://s3.example.com', region: 'r', bucket: 'my-bucket' };
+  const base = { ...blankProfile('P'), endpoint: 'https://s3.example.com', bucket: 'my-bucket' };
   it('profil valide -> aucune erreur', () => {
     expect(validateProfile(base)).toEqual([]);
   });
-  it('nom vide, endpoint sans schéma, bucket invalide', () => {
+  it('renvoie des clés i18n', () => {
     const errs = validateProfile({ ...base, name: '', endpoint: 's3.example.com', bucket: 'A' });
-    expect(errs.length).toBeGreaterThanOrEqual(3);
+    expect(errs).toEqual(
+      expect.arrayContaining(['err.name', 'err.endpoint', 'err.bucketInvalid']),
+    );
   });
   it('part size < 5 MiB rejetée', () => {
-    expect(validateProfile({ ...base, partSizeMiB: 4 })).toContain(
-      'Taille de part minimale : 5 MiB.',
-    );
+    expect(validateProfile({ ...base, partSizeMiB: 4 })).toContain('err.partSize');
   });
 });

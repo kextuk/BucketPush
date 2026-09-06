@@ -15,6 +15,7 @@ import {
 } from '../config';
 import { S3Uploader } from '../native/S3Uploader';
 import { ActionSheet } from '../components/Sheets';
+import { t } from '../i18n';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Profiles'>;
 
@@ -57,19 +58,16 @@ export function ProfilesScreen({ navigation }: Props) {
         const ok = await applyNativeConfig();
         await load();
         if (!ok) {
-          Alert.alert(
-            'Profil activé',
-            'Ce profil n’a pas de clés S3. Ajoute-les via « Modifier ».',
-          );
+          Alert.alert(t('profiles.activated'), t('profiles.activatedNoKeys'));
         }
       };
       if (pending.length) {
         Alert.alert(
-          'Changer de profil',
-          `${pending.length} upload(s) en attente seront annulés et la liste vidée.`,
+          t('profiles.switchTitle'),
+          t('profiles.switchBody', { n: pending.length }),
           [
-            { text: 'Rester', style: 'cancel' },
-            { text: 'Changer', style: 'destructive', onPress: go },
+            { text: t('profiles.stay'), style: 'cancel' },
+            { text: t('profiles.switch'), style: 'destructive', onPress: go },
           ],
           { cancelable: true },
         );
@@ -81,19 +79,19 @@ export function ProfilesScreen({ navigation }: Props) {
   );
 
   const addProfile = useCallback(async () => {
-    const p = await createProfile('Nouveau profil');
+    const p = await createProfile(t('profiles.newName'));
     navigation.navigate('Settings', { profileId: p.id });
   }, [navigation]);
 
   const confirmDelete = useCallback(
     (p: Profile) => {
       Alert.alert(
-        'Supprimer ce profil ?',
-        `« ${p.name} » et ses clés S3 seront effacés.`,
+        t('profiles.deleteQ'),
+        t('profiles.deleteBody', { name: p.name }),
         [
-          { text: 'Annuler', style: 'cancel' },
+          { text: t('common.cancel'), style: 'cancel' },
           {
-            text: 'Supprimer',
+            text: t('common.delete'),
             style: 'destructive',
             onPress: async () => {
               if (p.id === activeId) {
@@ -115,19 +113,19 @@ export function ProfilesScreen({ navigation }: Props) {
   const menuOptions = menuProfile
     ? [
         {
-          label: 'Modifier',
+          label: t('profiles.edit'),
           onPress: () =>
             navigation.navigate('Settings', { profileId: menuProfile.id }),
         },
         {
-          label: 'Dupliquer',
+          label: t('profiles.duplicate'),
           onPress: async () => {
             await duplicateProfile(menuProfile.id);
             load();
           },
         },
         {
-          label: 'Supprimer',
+          label: t('common.delete'),
           destructive: true,
           onPress: () => confirmDelete(menuProfile),
         },
@@ -141,9 +139,7 @@ export function ProfilesScreen({ navigation }: Props) {
         keyExtractor={p => p.id}
         contentContainerStyle={profiles.length ? undefined : styles.emptyWrap}
         ListEmptyComponent={
-          <Text style={styles.empty}>
-            Aucun profil. Crée-en un pour te connecter à un serveur S3.
-          </Text>
+          <Text style={styles.empty}>{t('profiles.empty')}</Text>
         }
         renderItem={({ item }) => {
           const active = item.id === activeId;
@@ -155,14 +151,14 @@ export function ProfilesScreen({ navigation }: Props) {
               <View style={styles.rowMain}>
                 <Text style={styles.name}>
                   {active ? '● ' : '○ '}
-                  {item.name || '(sans nom)'}
+                  {item.name || t('profiles.noName')}
                 </Text>
                 <Text style={styles.sub} numberOfLines={1}>
-                  {item.endpoint || 'endpoint non renseigné'}
+                  {item.endpoint || t('profiles.noEndpoint')}
                   {item.bucket ? ` · ${item.bucket}` : ''}
                 </Text>
                 {!item.hasCredentials ? (
-                  <Text style={styles.warn}>clés S3 manquantes</Text>
+                  <Text style={styles.warn}>{t('profiles.noKeys')}</Text>
                 ) : null}
               </View>
               <Pressable hitSlop={12} onPress={() => setMenuProfile(item)}>
@@ -173,12 +169,12 @@ export function ProfilesScreen({ navigation }: Props) {
         }}
       />
       <Pressable style={styles.fab} onPress={addProfile}>
-        <Text style={styles.fabText}>+ Nouveau profil</Text>
+        <Text style={styles.fabText}>{t('profiles.new')}</Text>
       </Pressable>
 
       <ActionSheet
         visible={menuProfile != null}
-        title={menuProfile?.name || 'Profil'}
+        title={menuProfile?.name || t('nav.profiles')}
         options={menuOptions}
         onClose={() => setMenuProfile(null)}
       />

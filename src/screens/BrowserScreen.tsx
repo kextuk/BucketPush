@@ -22,6 +22,7 @@ import { addFilesTo, addFolderTo, downloadTo, joinKey, summarizeEnqueue } from '
 import { sanitizeSegment } from '../keys';
 import { ActionSheet, PromptModal, type SheetOption } from '../components/Sheets';
 import { formatBytes, formatBytesExact, formatSpeed } from '../format';
+import { t } from '../i18n';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Browser'>;
 
@@ -88,7 +89,7 @@ export function BrowserScreen({ navigation }: Props) {
       // eslint-disable-next-line react/no-unstable-nested-components
       headerRight: () => (
         <Pressable onPress={() => navigation.navigate('Profiles')} hitSlop={12}>
-          <Text style={styles.headerBtn}>Profils</Text>
+          <Text style={styles.headerBtn}>{t('header.profiles')}</Text>
         </Pressable>
       ),
     });
@@ -129,12 +130,12 @@ export function BrowserScreen({ navigation }: Props) {
     const m = S3Uploader.onMoveProgress(e => {
       if (e.filesTotal <= 0) return;
       const pct = e.bytesTotal > 0 ? Math.round((e.bytesCopied / e.bytesTotal) * 100) : 0;
-      setOp({ label: 'Déplacement', done: e.filesDone, total: e.filesTotal, pct });
+      setOp({ label: t('op.moving'), done: e.filesDone, total: e.filesTotal, pct });
     });
     const d = S3Uploader.onDownloadProgress(e => {
       const pct = e.bytesTotal > 0 ? Math.round((e.bytesDone / e.bytesTotal) * 100) : 0;
       setOp({
-        label: `Téléchargement · ${e.currentName}`,
+        label: `${t('op.downloading')} · ${e.currentName}`,
         done: e.filesDone,
         total: e.filesTotal,
         pct,
@@ -321,22 +322,22 @@ export function BrowserScreen({ navigation }: Props) {
     setOp(null);
     exitMode();
     reload();
-    if (failed) Alert.alert('Terminé avec des erreurs', `${failed}/${keys.length} en échec.`);
+    if (failed) Alert.alert(t('op.withErrors'), t('op.nOfM', { done: failed, total: keys.length }));
   };
 
   const runMove = async (pairs: { src: string; dst: string }[]) => {
     if (!pairs.length) return;
-    setOp({ label: 'Déplacement', done: 0, total: pairs.length, pct: 0 });
+    setOp({ label: t('op.moving'), done: 0, total: pairs.length, pct: 0 });
     try {
       const res = await S3Uploader.moveObjects(pairs);
       if (res.failed) {
         Alert.alert(
-          'Déplacement terminé',
-          `${res.moved} ok · ${res.failed} en échec\n` + res.errors.slice(0, 6).join('\n'),
+          t('op.moving'),
+          t('move.result', { ok: res.moved, failed: res.failed }) + '\n' + res.errors.slice(0, 6).join('\n'),
         );
       }
     } catch (e: any) {
-      Alert.alert('Échec', String(e?.message ?? e));
+      Alert.alert(t('common.failure'), String(e?.message ?? e));
     } finally {
       setOp(null);
       exitMode();
@@ -345,20 +346,20 @@ export function BrowserScreen({ navigation }: Props) {
   };
 
   const moveFolderKeys = async (oldPrefix: string, newPrefix: string) => {
-    setOp({ label: 'Déplacement', done: 0, total: 0, pct: 0 });
+    setOp({ label: t('op.moving'), done: 0, total: 0, pct: 0 });
     try {
       const { keys } = await S3Uploader.listKeys(oldPrefix);
       if (!keys.length) {
-        Alert.alert('Dossier vide', 'Rien à déplacer.');
+        Alert.alert(t('move.emptyFolder'), t('move.nothing'));
         return;
       }
       const pairs = keys.map(k => ({ src: k, dst: newPrefix + k.slice(oldPrefix.length) }));
       const res = await S3Uploader.moveObjects(pairs);
       if (res.failed) {
-        Alert.alert('Terminé', `${res.moved} ok · ${res.failed} en échec`);
+        Alert.alert(t('common.done'), t('move.result', { ok: res.moved, failed: res.failed }));
       }
     } catch (e: any) {
-      Alert.alert('Échec', String(e?.message ?? e));
+      Alert.alert(t('common.failure'), String(e?.message ?? e));
     } finally {
       setOp(null);
       setMoveFolder(null);
@@ -371,18 +372,18 @@ export function BrowserScreen({ navigation }: Props) {
     if (moveFolder) {
       const dst = prefix + moveFolder.name + '/';
       if (dst === moveFolder.prefix) {
-        Alert.alert('Même emplacement', 'Le dossier est déjà là.');
+        Alert.alert(t('move.sameLoc'), t('move.folderAlreadyHere'));
         return;
       }
       if (prefix.startsWith(moveFolder.prefix)) {
-        Alert.alert('Destination invalide', 'On ne peut pas déplacer un dossier dans lui-même.');
+        Alert.alert(t('move.badDest'), t('move.intoItself'));
         return;
       }
       moveFolderKeys(moveFolder.prefix, dst);
       return;
     }
     if (selected.some(k => prefixOf(k) === prefix)) {
-      Alert.alert('Destination invalide', 'Certains fichiers sont déjà dans ce dossier.');
+      Alert.alert(t('move.badDest'), t('move.badDestFiles'));
       return;
     }
     runMove(selected.map(k => ({ src: k, dst: joinKey(prefix, baseName(k)) })));
@@ -390,14 +391,14 @@ export function BrowserScreen({ navigation }: Props) {
 
   const softDeleteSelected = () => {
     Alert.alert(
-      `Supprimer ${selected.length} fichier(s) ?`,
-      'Récupérable via « Restaurer » tant que la version n’est pas purgée.',
+      t('del.filesQ', { n: selected.length }),
+      t('del.recoverable'),
       [
-        { text: 'Annuler', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Supprimer',
+          text: t('common.delete'),
           style: 'destructive',
-          onPress: () => runBatch('Suppression', selected, k => S3Uploader.deleteObject(k)),
+          onPress: () => runBatch(t('op.deleting'), selected, k => S3Uploader.deleteObject(k)),
         },
       ],
       { cancelable: true },
@@ -406,20 +407,20 @@ export function BrowserScreen({ navigation }: Props) {
 
   const purgeSelected = () => {
     Alert.alert(
-      `Supprimer définitivement ${selected.length} objet(s) ?`,
-      'Toutes les versions ET les marqueurs seront supprimés. Irréversible.',
+      t('purge.filesQ', { n: selected.length }),
+      t('purge.warn'),
       [
-        { text: 'Annuler', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Supprimer déf.',
+          text: t('purge.btn'),
           style: 'destructive',
           onPress: async () => {
-            setOp({ label: 'Suppression définitive', done: 0, total: 0 });
+            setOp({ label: t('op.purgeDef'), done: 0, total: 0 });
             try {
               const { deleted } = await S3Uploader.purgeKeys(selected);
-              Alert.alert('Terminé', `${deleted} version(s) supprimée(s).`);
+              Alert.alert(t('common.done'), t('purge.doneN', { n: deleted }));
             } catch (e: any) {
-              Alert.alert('Échec', String(e?.message ?? e));
+              Alert.alert(t('common.failure'), String(e?.message ?? e));
             } finally {
               setOp(null);
               exitMode();
@@ -437,19 +438,19 @@ export function BrowserScreen({ navigation }: Props) {
       .filter(f => selected.includes(f.key) && !f.ghost)
       .map(f => ({ key: f.key, size: f.size }));
     if (!items.length) return;
-    setOp({ label: 'Téléchargement', done: 0, total: items.length, pct: 0 });
+    setOp({ label: t('op.downloading'), done: 0, total: items.length, pct: 0 });
     try {
       const res = await downloadTo(items);
       if (res) {
         Alert.alert(
-          res.failed ? 'Terminé avec des erreurs' : 'Téléchargé',
+          res.failed ? t('op.withErrors') : t('downloaded'),
           res.failed
-            ? `${res.downloaded} ok · ${res.failed} en échec\n` + res.errors.slice(0, 6).join('\n')
-            : `${res.downloaded} fichier(s) enregistré(s).`,
+            ? t('download.result', { ok: res.downloaded, failed: res.failed }) + '\n' + res.errors.slice(0, 6).join('\n')
+            : t('download.doneN', { n: res.downloaded }),
         );
       }
     } catch (e: any) {
-      if (e?.code !== 'OPERATION_CANCELED') Alert.alert('Échec', String(e?.message ?? e));
+      if (e?.code !== 'OPERATION_CANCELED') Alert.alert(t('common.failure'), String(e?.message ?? e));
     } finally {
       setOp(null);
       exitMode();
@@ -459,12 +460,12 @@ export function BrowserScreen({ navigation }: Props) {
   const restoreSelected = async () => {
     const keys = selMeta.ghostKeys;
     if (!keys.length) return;
-    setOp({ label: 'Restauration', done: 0, total: 0 });
+    setOp({ label: t('op.restoring'), done: 0, total: 0 });
     try {
       const { restored } = await S3Uploader.restoreKeys(keys);
-      Alert.alert('Restauré', `${restored} fichier(s) restauré(s).`);
+      Alert.alert(t('restored'), t('restore.doneN', { n: restored }));
     } catch (e: any) {
-      Alert.alert('Échec', String(e?.message ?? e));
+      Alert.alert(t('common.failure'), String(e?.message ?? e));
     } finally {
       setOp(null);
       exitMode();
@@ -487,21 +488,19 @@ export function BrowserScreen({ navigation }: Props) {
   };
 
   const showScopeSize = async (scopePrefix: string, label: string, allVersions = false) => {
-    setOp({ label: 'Calcul de la taille', done: 0, total: 0 });
+    setOp({ label: t('op.computingSize'), done: 0, total: 0 });
     const sub = S3Uploader.onScanProgress(e => {
-      setOp({ label: `${formatBytes(e.bytes)} · ${e.count} objets`, done: 0, total: 0 });
+      setOp({ label: t('op.sizeProgress', { bytes: formatBytes(e.bytes), n: e.count }), done: 0, total: 0 });
     });
     try {
       const { totalBytes, objectCount } = await S3Uploader.prefixStats(scopePrefix, allVersions);
       Alert.alert(
-        `${label}${allVersions ? ' — toutes versions' : ''}`,
-        `${formatBytesExact(totalBytes)}\n${objectCount} objet(s)` +
-          (allVersions
-            ? ''
-            : '\n\n(versions actuelles seulement — « taille réelle » pour le total facturé B2)'),
+        `${label}${allVersions ? t('size.allVersionsSuffix') : ''}`,
+        `${formatBytesExact(totalBytes)}\n${t('size.objects', { n: objectCount })}` +
+          (allVersions ? '' : '\n\n' + t('size.currentOnly')),
       );
     } catch (e: any) {
-      Alert.alert('Échec du calcul', String(e?.message ?? e));
+      Alert.alert(t('size.failure'), String(e?.message ?? e));
     } finally {
       sub.remove();
       setOp(null);
@@ -514,7 +513,7 @@ export function BrowserScreen({ navigation }: Props) {
     const name = sanitizeSegment(value);
     if (!p || !name) return;
     if (p.kind === 'newFolder') {
-      runBatch('Création', ['x'], async () => {
+      runBatch(t('op.creating'), ['x'], async () => {
         await S3Uploader.createFolder(prefix, name);
       });
     } else if (p.kind === 'renameFolder') {
@@ -533,25 +532,25 @@ export function BrowserScreen({ navigation }: Props) {
       if (res) {
         hydrateQueue();
         const msg = summarizeEnqueue(res);
-        if (msg) Alert.alert('File d’attente', msg);
+        if (msg) Alert.alert(t('queue.title'), msg);
       }
     } catch (e: any) {
-      if (e?.code !== 'OPERATION_CANCELED') Alert.alert('Erreur', String(e?.message ?? e));
+      if (e?.code !== 'OPERATION_CANCELED') Alert.alert(t('common.error'), String(e?.message ?? e));
     }
   };
   const addFolder = async () => {
-    setOp({ label: 'Lecture du dossier', done: 0, total: 0 });
+    setOp({ label: t('op.readingFolder'), done: 0, total: 0 });
     try {
       const res = await addFolderTo(prefix, (rootName, count) => {
         setOp(null);
         return new Promise(resolve => {
           Alert.alert(
-            `Importer « ${rootName} »`,
-            `${count} fichier(s) → /${prefix}\nUploader le dossier lui-même, ou seulement son contenu ?`,
+            t('import.title', { name: rootName }),
+            t('import.body', { n: count, prefix }),
             [
-              { text: 'Annuler', style: 'cancel', onPress: () => resolve(null) },
-              { text: 'Le contenu', onPress: () => resolve('contents') },
-              { text: `« ${rootName}/ »`, onPress: () => resolve('root') },
+              { text: t('common.cancel'), style: 'cancel', onPress: () => resolve(null) },
+              { text: t('import.contents'), onPress: () => resolve('contents') },
+              { text: t('import.folder', { name: rootName }), onPress: () => resolve('root') },
             ],
             { cancelable: true, onDismiss: () => resolve(null) },
           );
@@ -560,10 +559,10 @@ export function BrowserScreen({ navigation }: Props) {
       if (res) {
         hydrateQueue();
         const msg = summarizeEnqueue(res);
-        if (msg) Alert.alert('File d’attente', msg);
+        if (msg) Alert.alert(t('queue.title'), msg);
       }
     } catch (e: any) {
-      if (e?.code !== 'OPERATION_CANCELED') Alert.alert('Erreur', String(e?.message ?? e));
+      if (e?.code !== 'OPERATION_CANCELED') Alert.alert(t('common.error'), String(e?.message ?? e));
     } finally {
       setOp(null);
     }
@@ -571,21 +570,21 @@ export function BrowserScreen({ navigation }: Props) {
 
   const deleteFolder = (folderPrefix: string) => {
     Alert.alert(
-      'Supprimer ce dossier ?',
-      folderPrefix + '\nTout son contenu sera supprimé (récupérable jusqu’à purge).',
+      t('folder.deleteQ'),
+      t('folder.deleteBody', { prefix: folderPrefix }),
       [
-        { text: 'Annuler', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Supprimer',
+          text: t('common.delete'),
           style: 'destructive',
           onPress: async () => {
-            setOp({ label: 'Suppression', done: 0, total: 0 });
+            setOp({ label: t('op.deleting'), done: 0, total: 0 });
             try {
               const { deleted } = await S3Uploader.deletePrefix(folderPrefix);
               reload();
-              Alert.alert('Supprimé', `${deleted} objet(s).`);
+              Alert.alert(t('browser.deleted'), t('folder.deletedN', { n: deleted }));
             } catch (e: any) {
-              Alert.alert('Échec', String(e?.message ?? e));
+              Alert.alert(t('common.failure'), String(e?.message ?? e));
             } finally {
               setOp(null);
             }
@@ -597,7 +596,7 @@ export function BrowserScreen({ navigation }: Props) {
   };
 
   const restoreFolder = async (folderPrefix: string) => {
-    setOp({ label: 'Restauration', done: 0, total: 0 });
+    setOp({ label: t('op.restoring'), done: 0, total: 0 });
     try {
       // toutes les clés supprimées sous le préfixe
       const dead = new Set<string>();
@@ -613,9 +612,9 @@ export function BrowserScreen({ navigation }: Props) {
       }
       const { restored } = await S3Uploader.restoreKeys(Array.from(dead));
       reload();
-      Alert.alert('Restauré', `${restored} fichier(s) restauré(s).`);
+      Alert.alert(t('restored'), t('restore.doneN', { n: restored }));
     } catch (e: any) {
-      Alert.alert('Échec', String(e?.message ?? e));
+      Alert.alert(t('common.failure'), String(e?.message ?? e));
     } finally {
       setOp(null);
     }
@@ -623,21 +622,21 @@ export function BrowserScreen({ navigation }: Props) {
 
   const purgeVersions = (scopePrefix: string, label: string) => {
     Alert.alert(
-      'Purger les anciennes versions ?',
-      `${label}\nToutes les versions non courantes seront supprimées (irréversible).`,
+      t('purge.q'),
+      t('purge.qBody', { label }),
       [
-        { text: 'Annuler', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Purger',
+          text: t('purge.btn2'),
           style: 'destructive',
           onPress: async () => {
-            setOp({ label: 'Purge des versions', done: 0, total: 0 });
+            setOp({ label: t('op.purgeVersions'), done: 0, total: 0 });
             try {
               const { deleted } = await S3Uploader.purgeOldVersions(scopePrefix);
               reload();
-              Alert.alert('Purge terminée', `${deleted} version(s) supprimée(s).`);
+              Alert.alert(t('purge.done'), t('purge.doneN', { n: deleted }));
             } catch (e: any) {
-              Alert.alert('Échec', String(e?.message ?? e));
+              Alert.alert(t('common.failure'), String(e?.message ?? e));
             } finally {
               setOp(null);
             }
@@ -655,7 +654,7 @@ export function BrowserScreen({ navigation }: Props) {
       <View style={styles.container}>
         <Pressable style={styles.center} onPress={() => navigation.navigate('Profiles')}>
           <Text style={styles.dimText}>
-            Aucun profil S3 actif (ou clés manquantes).{'\n'}Appuie pour en configurer un.
+            {t('noProfile.title')}{'\n'}{t('noProfile.tap')}
           </Text>
         </Pressable>
       </View>
@@ -685,27 +684,27 @@ export function BrowserScreen({ navigation }: Props) {
   const selMenuOptions: SheetOption[] = [];
   if (selected.length === 1 && selMeta.allLive) {
     selMenuOptions.push({
-      label: 'Renommer',
+      label: t('sel.rename'),
       onPress: () => setPrompt({ kind: 'rename', key: selected[0] }),
     });
   }
   if (selMeta.liveKeys.length) {
     selMenuOptions.push({
-      label: `Télécharger (${selMeta.liveKeys.length})`,
+      label: t('sel.downloadN', { n: selMeta.liveKeys.length }),
       onPress: downloadSelected,
     });
   }
   if (selected.length === 1) {
     selMenuOptions.push({
-      label: 'Voir les versions',
+      label: t('sel.seeVersions'),
       onPress: () => navigation.navigate('Versions', { objectKey: selected[0] }),
     });
   }
   if (selMeta.hasGhost) {
-    selMenuOptions.push({ label: `Restaurer (${selMeta.ghostKeys.length})`, onPress: restoreSelected });
+    selMenuOptions.push({ label: t('sel.restoreN', { n: selMeta.ghostKeys.length }), onPress: restoreSelected });
   }
   selMenuOptions.push({
-    label: `Supprimer définitivement (${selected.length})`,
+    label: t('sel.purgeN', { n: selected.length }),
     destructive: true,
     onPress: purgeSelected,
   });
@@ -721,7 +720,7 @@ export function BrowserScreen({ navigation }: Props) {
                 style={styles.filterInput}
                 value={filter}
                 onChangeText={setFilter}
-                placeholder="Filtrer…"
+                placeholder={t('browser.filter')}
                 placeholderTextColor="#888"
                 autoFocus
                 autoCapitalize="none"
@@ -741,7 +740,7 @@ export function BrowserScreen({ navigation }: Props) {
               <Pressable
                 onPress={() => setPrompt({ kind: 'newFolder' })}
                 style={styles.tBtn}>
-                <Text style={styles.tBtnText}>＋ dossier</Text>
+                <Text style={styles.tBtnText}>{t('browser.newFolder')}</Text>
               </Pressable>
               <View style={styles.spacer} />
               <Pressable onPress={() => setShowFilter(true)} style={styles.tBtn}>
@@ -764,39 +763,39 @@ export function BrowserScreen({ navigation }: Props) {
           {mode === 'select' ? (
             <>
               <Text style={styles.abTitle} numberOfLines={1}>
-                {selected.length} sél.
+                {t('sel.count', { n: selected.length })}
                 {selMeta.hasGhost ? ` · ${selMeta.ghostKeys.length} 🗑` : ''}
               </Text>
               <Pressable onPress={selectAll} hitSlop={8}>
-                <Text style={styles.abAction}>Tout</Text>
+                <Text style={styles.abAction}>{t('sel.all')}</Text>
               </Pressable>
               {selMeta.allLive ? (
                 <>
                   <Pressable onPress={startMove} hitSlop={8}>
-                    <Text style={styles.abAction}>Déplacer</Text>
+                    <Text style={styles.abAction}>{t('sel.move')}</Text>
                   </Pressable>
                   <Pressable onPress={downloadSelected} hitSlop={8}>
-                    <Text style={styles.abAction}>Téléch.</Text>
+                    <Text style={styles.abAction}>{t('sel.download')}</Text>
                   </Pressable>
                   <Pressable onPress={() => setSelMenu(true)} hitSlop={8}>
                     <Text style={styles.abAction}>⋯</Text>
                   </Pressable>
                   <Pressable onPress={softDeleteSelected} hitSlop={8}>
-                    <Text style={[styles.abAction, styles.abDanger]}>Suppr.</Text>
+                    <Text style={[styles.abAction, styles.abDanger]}>{t('sel.delete')}</Text>
                   </Pressable>
                 </>
               ) : (
                 <>
                   {selMeta.hasGhost ? (
                     <Pressable onPress={restoreSelected} hitSlop={8}>
-                      <Text style={styles.abAction}>Restaurer</Text>
+                      <Text style={styles.abAction}>{t('sel.restore')}</Text>
                     </Pressable>
                   ) : null}
                   <Pressable onPress={() => setSelMenu(true)} hitSlop={8}>
                     <Text style={styles.abAction}>⋯</Text>
                   </Pressable>
                   <Pressable onPress={purgeSelected} hitSlop={8}>
-                    <Text style={[styles.abAction, styles.abDanger]}>Suppr. déf.</Text>
+                    <Text style={[styles.abAction, styles.abDanger]}>{t('sel.purge')}</Text>
                   </Pressable>
                 </>
               )}
@@ -805,11 +804,11 @@ export function BrowserScreen({ navigation }: Props) {
             <>
               <Text style={styles.abTitle} numberOfLines={1}>
                 {moveFolder
-                  ? `Déplacer « ${moveFolder.name} » → /${prefix}`
-                  : `Déplacer ${selected.length} → /${prefix}`}
+                  ? t('sel.moveFolderTo', { name: moveFolder.name, prefix })
+                  : t('sel.moveTo', { n: selected.length, prefix })}
               </Text>
               <Pressable onPress={pasteHere} hitSlop={8}>
-                <Text style={styles.abPaste}>Coller ici</Text>
+                <Text style={styles.abPaste}>{t('sel.pasteHere')}</Text>
               </Pressable>
             </>
           )}
@@ -847,7 +846,7 @@ export function BrowserScreen({ navigation }: Props) {
         }
         ListEmptyComponent={
           loading ? undefined : (
-            <Text style={styles.dimText}>{filter ? 'Aucun résultat' : 'Dossier vide'}</Text>
+            <Text style={styles.dimText}>{filter ? t('browser.noResult') : t('browser.empty')}</Text>
           )
         }
         renderItem={({ item }) =>
@@ -867,12 +866,12 @@ export function BrowserScreen({ navigation }: Props) {
                 {folderSizes[item.prefix] && folderSizes[item.prefix] !== 'loading' ? (
                   <Text style={styles.rowMeta}>
                     {formatBytes((folderSizes[item.prefix] as { bytes: number }).bytes)} ·{' '}
-                    {(folderSizes[item.prefix] as { count: number }).count} obj.
+                    {(folderSizes[item.prefix] as { count: number }).count} {t('browser.obj')}
                   </Text>
                 ) : null}
               </View>
               {item.ghost ? (
-                <Text style={[styles.tag, styles.tagDel]}>supprimé</Text>
+                <Text style={[styles.tag, styles.tagDel]}>{t('browser.deleted')}</Text>
               ) : folderSizes[item.prefix] === 'loading' ? (
                 <ActivityIndicator size="small" />
               ) : !folderSizes[item.prefix] ? (
@@ -905,11 +904,11 @@ export function BrowserScreen({ navigation }: Props) {
                 <Text style={styles.rowMeta}>
                   {formatBytes(item.ghost ? item.totalBytes : item.size)}
                   {item.lastModified ? ` · ${shortDate(item.lastModified)}` : ''}
-                  {item.versionCount > 1 ? ` · ${item.versionCount} versions` : ''}
+                  {item.versionCount > 1 ? ` · ${t('browser.versionsShort', { n: item.versionCount })}` : ''}
                 </Text>
               </View>
               {item.ghost ? (
-                <Text style={[styles.tag, styles.tagDel]}>supprimé</Text>
+                <Text style={[styles.tag, styles.tagDel]}>{t('browser.deleted')}</Text>
               ) : item.versionCount > 1 ? (
                 <Text style={styles.tag}>{item.versionCount}v</Text>
               ) : null}
@@ -921,7 +920,7 @@ export function BrowserScreen({ navigation }: Props) {
             {loading && rows.length > 0 ? <ActivityIndicator /> : null}
             {!loading && nextVer != null ? (
               <Pressable style={styles.moreBtn} onPress={() => load(prefix, nextVer)}>
-                <Text style={styles.moreText}>Charger plus</Text>
+                <Text style={styles.moreText}>{t('browser.loadMore')}</Text>
               </Pressable>
             ) : null}
           </View>
@@ -948,46 +947,46 @@ export function BrowserScreen({ navigation }: Props) {
 
       <ActionSheet
         visible={sheet}
-        title={`Ajouter dans ${prefix ? '/' + prefix : 'la racine'}`}
+        title={t('add.inFolder', { loc: prefix ? '/' + prefix : t('add.root') })}
         options={[
-          { label: 'Fichiers…', onPress: addFiles },
-          { label: 'Dossier Android…', onPress: addFolder },
+          { label: t('add.files'), onPress: addFiles },
+          { label: t('add.androidFolder'), onPress: addFolder },
         ]}
         onClose={() => setSheet(false)}
       />
 
       <ActionSheet
         visible={selMenu}
-        title={`${selected.length} sélectionné(s)`}
+        title={t('sel.title', { n: selected.length })}
         options={selMenuOptions}
         onClose={() => setSelMenu(false)}
       />
 
       <ActionSheet
         visible={toolsMenu}
-        title="Outils"
+        title={t('tools.title')}
         options={[
           {
-            label: 'Taille de ce dossier',
-            onPress: () => showScopeSize(prefix, prefix ? `/${prefix}` : 'Racine du bucket'),
+            label: t('tools.sizeHere'),
+            onPress: () => showScopeSize(prefix, prefix ? `/${prefix}` : t('size.rootLabel')),
           },
           {
-            label: 'Taille du dépôt (versions actuelles)',
-            onPress: () => showScopeSize('', 'Dépôt entier'),
+            label: t('tools.sizeRepoCurrent'),
+            onPress: () => showScopeSize('', t('size.repoLabel')),
           },
           {
-            label: 'Taille réelle du dépôt (toutes versions, ≈ B2)',
-            onPress: () => showScopeSize('', 'Dépôt entier', true),
+            label: t('tools.sizeRepoAll'),
+            onPress: () => showScopeSize('', t('size.repoLabel'), true),
           },
           {
-            label: 'Purger les anciennes versions (dossier courant)',
+            label: t('tools.purgeHere'),
             destructive: true,
-            onPress: () => purgeVersions(prefix, prefix ? `/${prefix}` : 'racine du bucket'),
+            onPress: () => purgeVersions(prefix, prefix ? `/${prefix}` : t('size.rootLabel')),
           },
           {
-            label: 'Purger les anciennes versions (tout le bucket)',
+            label: t('tools.purgeAll'),
             destructive: true,
-            onPress: () => purgeVersions('', 'tout le bucket'),
+            onPress: () => purgeVersions('', t('size.repoLabel')),
           },
         ]}
         onClose={() => setToolsMenu(false)}
@@ -1000,28 +999,28 @@ export function BrowserScreen({ navigation }: Props) {
           folderMenu
             ? [
                 {
-                  label: 'Renommer',
+                  label: t('sel.rename'),
                   onPress: () =>
                     setPrompt({ kind: 'renameFolder', prefix: folderMenu.prefix }),
                 },
                 {
-                  label: 'Déplacer',
+                  label: t('folder.move'),
                   onPress: () => startFolderMove(folderMenu.prefix, folderMenu.name),
                 },
                 ...(folderMenu.ghost
                   ? [
                       {
-                        label: 'Restaurer le contenu',
+                        label: t('folder.restoreContent'),
                         onPress: () => restoreFolder(folderMenu.prefix),
                       },
                     ]
                   : []),
                 {
-                  label: 'Purger les anciennes versions',
+                  label: t('folder.purge'),
                   onPress: () => purgeVersions(folderMenu.prefix, `/${folderMenu.prefix}`),
                 },
                 {
-                  label: 'Supprimer le dossier et son contenu',
+                  label: t('folder.deleteWithContent'),
                   destructive: true,
                   onPress: () => deleteFolder(folderMenu.prefix),
                 },
@@ -1035,8 +1034,8 @@ export function BrowserScreen({ navigation }: Props) {
         visible={prompt != null}
         title={
           prompt?.kind === 'rename' || prompt?.kind === 'renameFolder'
-            ? 'Renommer'
-            : 'Nouveau dossier'
+            ? t('folder.renameTitle')
+            : t('folder.newTitle')
         }
         initial={
           prompt?.kind === 'rename'
@@ -1045,7 +1044,7 @@ export function BrowserScreen({ navigation }: Props) {
               ? prompt.prefix.slice(prompt.prefix.replace(/[^/]+\/$/, '').length).replace(/\/$/, '')
               : ''
         }
-        placeholder={prompt?.kind === 'newFolder' ? 'Nom du dossier' : 'Nouveau nom'}
+        placeholder={prompt?.kind === 'newFolder' ? t('folder.namePlaceholder') : t('folder.newNamePlaceholder')}
         onCancel={() => setPrompt(null)}
         onSubmit={submitPrompt}
       />
@@ -1071,7 +1070,7 @@ function shortDate(iso?: string): string {
   return isNaN(d.getTime()) ? '' : d.toLocaleDateString();
 }
 function sortLabel(m: SortMode): string {
-  return m === 'name' ? 'A→Z' : m === 'size' ? 'Taille' : 'Récent';
+  return m === 'name' ? 'A→Z' : m === 'size' ? t('sort.size') : t('sort.recent');
 }
 function cycleSort(m: SortMode, set: (m: SortMode) => void) {
   return () => set(m === 'name' ? 'size' : m === 'size' ? 'recent' : 'name');
@@ -1084,9 +1083,10 @@ function queueLabel(s: {
   doneCount: number;
   totalCount: number;
 }): string {
-  if (s.failedCount > 0) return `File d’attente — ${s.failedCount} échec(s)`;
-  if (s.activeCount > 0) return `${s.activeCount} en cours · ${s.pct}% · ${formatSpeed(s.speedBps)}`;
-  return `${s.doneCount}/${s.totalCount} terminé(s)`;
+  if (s.failedCount > 0) return t('queue.banner.failed', { n: s.failedCount });
+  if (s.activeCount > 0)
+    return t('queue.banner.active', { n: s.activeCount, pct: s.pct, speed: formatSpeed(s.speedBps) });
+  return t('queue.banner.done', { done: s.doneCount, total: s.totalCount });
 }
 
 const styles = StyleSheet.create({

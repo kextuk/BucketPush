@@ -128,18 +128,15 @@ export function deriveRegion(endpoint: string, override?: string): string {
   return 'us-east-1';
 }
 
+/** Renvoie des **clés i18n** (`err.*`), traduites par l'appelant. */
 export function validateProfile(p: ProfileMeta): string[] {
   const errors: string[] = [];
-  if (!p.name.trim()) errors.push('Nom de profil requis.');
-  if (!/^https?:\/\/.+/.test(p.endpoint.trim())) {
-    errors.push('Endpoint invalide (doit commencer par http:// ou https://).');
-  }
-  if (!p.bucket.trim()) errors.push('Bucket requis.');
+  if (!p.name.trim()) errors.push('err.name');
+  if (!/^https?:\/\/.+/.test(p.endpoint.trim())) errors.push('err.endpoint');
+  if (!p.bucket.trim()) errors.push('err.bucketRequired');
   else if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(p.bucket.trim())) {
-    errors.push('Nom de bucket invalide.');
+    errors.push('err.bucketInvalid');
   }
-  if (p.partSizeMiB != null && p.partSizeMiB < 5) {
-    errors.push('Taille de part minimale : 5 MiB.');
-  }
+  if (p.partSizeMiB != null && p.partSizeMiB < 5) errors.push('err.partSize');
   return errors;
 }
