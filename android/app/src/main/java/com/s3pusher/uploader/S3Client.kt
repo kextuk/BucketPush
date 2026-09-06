@@ -94,6 +94,117 @@ class S3Client(
         }
     }
 
+    /** Objet vide (marqueur de « dossier » : clé se terminant par '/'). */
+    fun putEmptyObject(key: String) {
+        val url = config.objectUrl(key)
+        execute(build("PUT", url, config.canonicalPath(key), emptyMap(),
+            SigV4Signer.EMPTY_SHA256, EMPTY_BODY)).use { r ->
+            if (!r.isSuccessful) throw parseError(r, "PutObject a échoué")
+        }
+    }
+
+    /** Toutes les clés sous un préfixe (sans delimiter), paginé. */
+    fun listAllKeys(prefix: String): List<String> {
+        val keys = ArrayList<String>()
+        var token: String? = null
+        do {
+            val query = buildMap {
+                put("list-type", "2")
+                put("max-keys", "1000")
+                if (prefix.isNotEmpty()) put("prefix", prefix)
+                if (token != null) put("continuation-token", token!!)
+            }
+            val url = withQuery(config.bucketUrl(), query)
+            execute(build("GET", url, config.canonicalBucketPath(), query,
+                SigV4Signer.EMPTY_SHA256, null)).use { r ->
+                val body = r.body?.string().orEmpty()
+                if (!r.isSuccessful) throw parseError(r, body, "ListObjectsV2 a échoué")
+                val res = parseListObjects(body)
+                res.objects.forEach { keys.add(it.key) }
+                token = res.nextToken
+            }
+        } while (token != null)
+        return keys
+    }
+
+    /**
+     * Déplace (renomme) un objet : copie **côté serveur** (aucune donnée ne transite par
+     * le client) puis suppression de la source. Copie simple ≤ 5 GiB, sinon multipart.
+     */
+    fun moveObject(srcKey: String, dstKey: String) {
+        if (srcKey == dstKey) return
+        val size = headObject(srcKey) ?: throw IOException("Objet source introuvable : $srcKey")
+        if (size <= COPY_LIMIT) copyObject(srcKey, dstKey) else multipartCopy(srcKey, dstKey, size)
+        deleteObject(srcKey)
+    }
+
+    private fun copySource(srcKey: String): String {
+        val path = "/${config.bucket}/$srcKey"
+        return path.split("/").joinToString("/") { SigV4Signer.uriEncode(it, encodeSlash = true) }
+    }
+
+    private fun copyObject(srcKey: String, dstKey: String) {
+        val url = config.objectUrl(dstKey)
+        execute(build("PUT", url, config.canonicalPath(dstKey), emptyMap(),
+            SigV4Signer.EMPTY_SHA256, EMPTY_BODY,
+            extraSignedHeaders = mapOf("x-amz-copy-source" to copySource(srcKey)))).use { r ->
+            val body = r.body?.string().orEmpty()
+            if (!r.isSuccessful) throw parseError(r, body, "CopyObject a échoué")
+            if (body.contains("<Error")) {
+                throw S3Exception(200, extractTag(body, "Code"),
+                    "CopyObject : erreur dans le corps (200) : " +
+                        (extractTag(body, "Message") ?: body.take(200)))
+            }
+        }
+    }
+
+    private fun multipartCopy(srcKey: String, dstKey: String, size: Long) {
+        val uploadId = createMultipartUpload(dstKey, null)
+        try {
+            val parts = ArrayList<UploadedPart>()
+            var offset = 0L
+            var partNumber = 1
+            while (offset < size) {
+                val end = minOf(offset + COPY_LIMIT, size) - 1
+                parts.add(
+                    UploadedPart(
+                        partNumber,
+                        uploadPartCopy(dstKey, uploadId, partNumber, srcKey, offset, end),
+                    ),
+                )
+                offset = end + 1
+                partNumber++
+            }
+            completeMultipartUpload(dstKey, uploadId, parts)
+        } catch (e: Exception) {
+            runCatching { abortMultipartUpload(dstKey, uploadId) }
+            throw e
+        }
+    }
+
+    private fun uploadPartCopy(
+        dstKey: String,
+        uploadId: String,
+        partNumber: Int,
+        srcKey: String,
+        rangeStart: Long,
+        rangeEnd: Long,
+    ): String {
+        val query = mapOf("partNumber" to partNumber.toString(), "uploadId" to uploadId)
+        val url = withQuery(config.objectUrl(dstKey), query)
+        execute(build("PUT", url, config.canonicalPath(dstKey), query,
+            SigV4Signer.EMPTY_SHA256, EMPTY_BODY,
+            extraSignedHeaders = mapOf(
+                "x-amz-copy-source" to copySource(srcKey),
+                "x-amz-copy-source-range" to "bytes=$rangeStart-$rangeEnd",
+            ))).use { r ->
+            val body = r.body?.string().orEmpty()
+            if (!r.isSuccessful) throw parseError(r, body, "UploadPartCopy $partNumber a échoué")
+            return extractTag(body, "ETag")
+                ?: throw IOException("ETag absent (UploadPartCopy $partNumber)")
+        }
+    }
+
     fun createMultipartUpload(key: String, contentType: String?): String {
         val query = mapOf("uploads" to "")
         val url = withQuery(config.objectUrl(key), query)
@@ -370,6 +481,9 @@ class S3Client(
     }
 
     companion object {
+        /** Plafond d'une copie S3 simple ; au-delà → copie multipart. */
+        private const val COPY_LIMIT = 5L * 1024 * 1024 * 1024
+
         private val EMPTY_BODY: RequestBody = ByteArray(0).toRequestBody(null)
 
         fun defaultHttpClient(): OkHttpClient = OkHttpClient.Builder()

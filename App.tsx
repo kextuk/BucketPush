@@ -54,9 +54,14 @@ function App(): React.JSX.Element {
       <NavigationContainer theme={scheme === 'dark' ? DarkTheme : DefaultTheme}>
         <Stack.Navigator>
           <Stack.Screen
+            name="Browser"
+            component={BrowserScreen}
+            options={{ title: 'S3 Pusher' }}
+          />
+          <Stack.Screen
             name="Queue"
             component={QueueScreen}
-            options={{ title: 'S3 Pusher' }}
+            options={{ title: 'File d’attente' }}
           />
           <Stack.Screen
             name="Profiles"
@@ -67,11 +72,6 @@ function App(): React.JSX.Element {
             name="Settings"
             component={SettingsScreen}
             options={{ title: 'Profil S3' }}
-          />
-          <Stack.Screen
-            name="Browser"
-            component={BrowserScreen}
-            options={{ title: 'Parcourir le bucket' }}
           />
         </Stack.Navigator>
       </NavigationContainer>

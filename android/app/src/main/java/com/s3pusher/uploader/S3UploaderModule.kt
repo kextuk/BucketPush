@@ -217,6 +217,123 @@ class S3UploaderModule(private val reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun deleteObject(key: String, promise: Promise) {
+        withS3(promise) { s3 ->
+            s3.deleteObject(key)
+            promise.resolve(null)
+        }
+    }
+
+    @ReactMethod
+    fun createFolder(prefix: String, name: String, promise: Promise) {
+        withS3(promise) { s3 ->
+            val clean = name.trim().trim('/').replace(Regex("[\\\\/]+"), "_")
+            if (clean.isEmpty()) {
+                promise.reject("bad_name", "Nom de dossier vide")
+                return@withS3
+            }
+            s3.putEmptyObject("$prefix$clean/")
+            promise.resolve(null)
+        }
+    }
+
+    /** Déplace/renomme un objet (copie côté serveur + suppression source). */
+    @ReactMethod
+    fun moveObject(srcKey: String, dstKey: String, promise: Promise) {
+        withS3(promise) { s3 ->
+            s3.moveObject(srcKey, dstKey)
+            promise.resolve(null)
+        }
+    }
+
+    /** Supprime tout ce qui est sous un préfixe. Résout `{ deleted }`. */
+    @ReactMethod
+    fun deletePrefix(prefix: String, promise: Promise) {
+        withS3(promise) { s3 ->
+            val keys = s3.listAllKeys(prefix)
+            val deleted = java.util.concurrent.atomic.AtomicInteger(0)
+            kotlinx.coroutines.coroutineScope {
+                val sem = kotlinx.coroutines.sync.Semaphore(8)
+                keys.forEach { k ->
+                    launch {
+                        sem.acquire()
+                        try {
+                            s3.deleteObject(k)
+                            deleted.incrementAndGet()
+                        } finally {
+                            sem.release()
+                        }
+                    }
+                }
+            }
+            promise.resolve(Arguments.createMap().apply { putInt("deleted", deleted.get()) })
+        }
+    }
+
+    /**
+     * Énumère récursivement un arbre SAF (`content://…/tree/…` renvoyé par pickDirectory).
+     * Résout `{ files: [{ uri, name, relativePath, size, mimeType }] }`.
+     */
+    @ReactMethod
+    fun listTree(treeUri: String, promise: Promise) {
+        scope.launch {
+            try {
+                val root = Uri.parse(treeUri)
+                runCatching {
+                    reactContext.contentResolver.takePersistableUriPermission(
+                        root, Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                    )
+                }
+                val rootDocId = android.provider.DocumentsContract.getTreeDocumentId(root)
+                val files = Arguments.createArray()
+                walkTree(root, rootDocId, "", files)
+                promise.resolve(Arguments.createMap().apply { putArray("files", files) })
+            } catch (e: Exception) {
+                promise.reject("list_tree_failed", e.message, e)
+            }
+        }
+    }
+
+    private fun walkTree(
+        treeUri: Uri,
+        docId: String,
+        relPath: String,
+        out: com.facebook.react.bridge.WritableArray,
+    ) {
+        val childrenUri =
+            android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, docId)
+        val cols = arrayOf(
+            android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            android.provider.DocumentsContract.Document.COLUMN_MIME_TYPE,
+            android.provider.DocumentsContract.Document.COLUMN_SIZE,
+        )
+        reactContext.contentResolver.query(childrenUri, cols, null, null, null)?.use { c ->
+            while (c.moveToNext()) {
+                val id = c.getString(0) ?: continue
+                val name = c.getString(1) ?: continue
+                val mime = if (c.isNull(2)) null else c.getString(2)
+                val size = if (c.isNull(3)) -1L else c.getLong(3)
+                val childRel = if (relPath.isEmpty()) name else "$relPath/$name"
+                if (mime == android.provider.DocumentsContract.Document.MIME_TYPE_DIR) {
+                    walkTree(treeUri, id, childRel, out)
+                } else {
+                    val fileUri =
+                        android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
+                    out.pushMap(
+                        Arguments.createMap().apply {
+                            putString("uri", fileUri.toString())
+                            putString("name", name)
+                            putString("relativePath", childRel)
+                            putDouble("size", size.toDouble())
+                            mime?.let { putString("mimeType", it) }
+                        },
+                    )
+                }
+            }
+        }
+    }
+
+    private fun withS3(promise: Promise, block: suspend (S3Client) -> Unit) {
         val config = CredentialStore(reactContext).load()
         if (config == null) {
             promise.reject("no_config", "Aucune configuration enregistrée")
@@ -224,10 +341,9 @@ class S3UploaderModule(private val reactContext: ReactApplicationContext) :
         }
         scope.launch {
             try {
-                S3Client(config).deleteObject(key)
-                promise.resolve(null)
+                block(S3Client(config))
             } catch (e: Exception) {
-                promise.reject("delete_failed", e.message, e)
+                promise.reject("s3_op_failed", e.message, e)
             }
         }
     }

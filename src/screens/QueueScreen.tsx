@@ -10,14 +10,10 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { pick, types } from '@react-native-documents/picker';
 
 import type { RootStackParamList } from '../../App';
-import { applyNativeConfig } from '../../App';
 import { useUploader, type UiItem } from '../useUploader';
-import { S3Uploader } from '../native/S3Uploader';
-import { getActiveProfile, loadConfig } from '../config';
-import { buildKey, dedupeKeys } from '../keys';
+import { getActiveProfile } from '../config';
 import { formatBytes, formatEta, formatSpeed, percent } from '../format';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Queue'>;
@@ -25,22 +21,15 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Queue'>;
 export function QueueScreen({ navigation }: Props) {
   const { items, queueStatus, hydrate, pause, resume, cancel, retry, clearCompleted } =
     useUploader();
-  const [busy, setBusy] = useState(false);
-  const [configured, setConfigured] = useState(true);
   const [profileName, setProfileName] = useState('');
 
   useLayoutEffect(() => {
     navigation.setOptions({
       // eslint-disable-next-line react/no-unstable-nested-components
       headerRight: () => (
-        <View style={styles.headerBtns}>
-          <Pressable onPress={() => navigation.navigate('Browser')} hitSlop={12}>
-            <Text style={styles.headerBtn}>Parcourir</Text>
-          </Pressable>
-          <Pressable onPress={() => navigation.navigate('Profiles')} hitSlop={12}>
-            <Text style={styles.headerBtn}>Profils</Text>
-          </Pressable>
-        </View>
+        <Pressable onPress={() => navigation.navigate('Profiles')} hitSlop={12}>
+          <Text style={styles.headerBtn}>Profils</Text>
+        </Pressable>
       ),
     });
   }, [navigation]);
@@ -48,79 +37,22 @@ export function QueueScreen({ navigation }: Props) {
   useFocusEffect(
     useCallback(() => {
       (async () => {
-        const ok = await applyNativeConfig();
-        setConfigured(ok);
         setProfileName((await getActiveProfile())?.name ?? '');
         hydrate();
       })();
     }, [hydrate]),
   );
 
-  const addFiles = useCallback(async () => {
-    try {
-      setBusy(true);
-      const cfg = await loadConfig();
-      if (!cfg.endpoint || !cfg.bucket || !cfg.hasCredentials) {
-        Alert.alert(
-          'Profil incomplet',
-          'Choisis ou complète un profil S3 (endpoint, bucket, clés) dans « Profils ».',
-        );
-        return;
-      }
-      const picked = await pick({
-        allowMultiSelection: true,
-        // ACTION_OPEN_DOCUMENT + permission persistée : pas de copie, survit au
-        // redémarrage du process (indispensable pour la reprise d'upload).
-        mode: 'open',
-        requestLongTermAccess: true,
-        type: [types.allFiles],
-      });
-      if (!picked.length) return;
-
-      const rawKeys = picked.map(f =>
-        buildKey(f.name ?? 'fichier', {
-          prefix: cfg.keyPrefix,
-          timestamp: cfg.timestampKeys,
-        }),
-      );
-      const keys = dedupeKeys(rawKeys);
-      const payload = picked.map((f, i) => ({
-        id: `${Date.now()}-${i}-${Math.random().toString(36).slice(2, 8)}`,
-        uri: f.uri,
-        key: keys[i],
-        displayName: f.name ?? keys[i].split('/').pop() ?? 'fichier',
-        sizeBytes: typeof f.size === 'number' ? f.size : -1,
-        contentType: f.type ?? undefined,
-      }));
-
-      const res = await S3Uploader.enqueue(payload);
-      hydrate();
-      const skipped = res.skippedExisting + res.skippedInQueue;
-      if (skipped > 0) {
-        const parts: string[] = [];
-        if (res.skippedExisting) parts.push(`${res.skippedExisting} déjà en ligne`);
-        if (res.skippedInQueue) parts.push(`${res.skippedInQueue} déjà dans la file`);
-        Alert.alert(
-          'Fichiers ignorés',
-          `${skipped} fichier(s) non ajouté(s) : ${parts.join(', ')}.` +
-            (res.queued ? `\n${res.queued} ajouté(s) à la file.` : ''),
-        );
-      }
-    } catch (e: any) {
-      if (e?.code === 'OPERATION_CANCELED') return;
-      Alert.alert('Erreur', String(e?.message ?? e));
-    } finally {
-      setBusy(false);
-    }
-  }, [hydrate]);
-
   const onItemPress = useCallback(
     (item: UiItem) => {
-      const actions: { text: string; onPress?: () => void; style?: 'cancel' | 'destructive' }[] =
-        [];
+      const actions: {
+        text: string;
+        onPress?: () => void;
+        style?: 'cancel' | 'destructive';
+      }[] = [];
       if (item.status === 'uploading' || item.status === 'queued') {
         actions.push({
-          text: "Annuler l'upload",
+          text: 'Annuler l’upload',
           style: 'destructive',
           onPress: () => cancel(item.id),
         });
@@ -130,7 +62,7 @@ export function QueueScreen({ navigation }: Props) {
       }
       if (item.status === 'skipped') {
         actions.push({
-          text: "Forcer l'upload (écrase)",
+          text: 'Forcer l’upload (écrase)',
           style: 'destructive',
           onPress: () => retry(item.id),
         });
@@ -145,14 +77,6 @@ export function QueueScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      {!configured && (
-        <Pressable style={styles.banner} onPress={() => navigation.navigate('Profiles')}>
-          <Text style={styles.bannerText}>
-            Aucun profil S3 actif (ou clés manquantes) — appuie pour choisir un profil.
-          </Text>
-        </Pressable>
-      )}
-
       <View style={styles.toolbar}>
         <Pressable onPress={() => navigation.navigate('Profiles')}>
           <Text style={styles.status}>
@@ -179,20 +103,15 @@ export function QueueScreen({ navigation }: Props) {
       <FlatList
         data={items}
         keyExtractor={i => i.id}
-        contentContainerStyle={items.length ? undefined : styles.emptyWrap}
+        contentContainerStyle={items.length ? styles.listPad : styles.emptyWrap}
         refreshControl={<RefreshControl refreshing={false} onRefresh={hydrate} />}
         ListEmptyComponent={
-          <Text style={styles.empty}>Aucun fichier. Appuie sur « Ajouter des fichiers ».</Text>
+          <Text style={styles.empty}>
+            Rien dans la file. Ajoute des fichiers depuis le navigateur.
+          </Text>
         }
         renderItem={({ item }) => <Row item={item} onPress={() => onItemPress(item)} />}
       />
-
-      <Pressable
-        style={[styles.fab, busy && styles.fabDisabled]}
-        onPress={addFiles}
-        disabled={busy}>
-        <Text style={styles.fabText}>{busy ? '…' : '+ Ajouter des fichiers'}</Text>
-      </Pressable>
     </View>
   );
 }
@@ -224,7 +143,7 @@ function Row({ item, onPress }: { item: UiItem; onPress: () => void }) {
         </Text>
       </View>
       {item.error ? (
-        <Text style={styles.error} numberOfLines={2}>
+        <Text style={styles.errorText} numberOfLines={2}>
           {item.error}
         </Text>
       ) : null}
@@ -266,10 +185,7 @@ function badgeStyle(s: string) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  headerBtns: { flexDirection: 'row', gap: 16 },
   headerBtn: { color: '#0a84ff', fontSize: 15, fontWeight: '600' },
-  banner: { backgroundColor: '#8a6d00', padding: 12 },
-  bannerText: { color: '#fff', fontSize: 13 },
   toolbar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -283,6 +199,7 @@ const styles = StyleSheet.create({
   toolbarBtns: { flexDirection: 'row', gap: 8 },
   btn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: '#0a84ff' },
   btnText: { color: '#fff', fontWeight: '600', fontSize: 13 },
+  listPad: { paddingBottom: 24 },
   emptyWrap: { flexGrow: 1, alignItems: 'center', justifyContent: 'center' },
   empty: { opacity: 0.6, textAlign: 'center', paddingHorizontal: 32 },
   row: {
@@ -310,18 +227,5 @@ const styles = StyleSheet.create({
   barFill: { height: 6, backgroundColor: '#0a84ff' },
   rowMeta: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
   meta: { fontSize: 12, opacity: 0.65 },
-  error: { fontSize: 12, color: '#c62828', marginTop: 4 },
-  fab: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    bottom: 20,
-    backgroundColor: '#0a84ff',
-    borderRadius: 14,
-    paddingVertical: 15,
-    alignItems: 'center',
-    elevation: 4,
-  },
-  fabDisabled: { opacity: 0.5 },
-  fabText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  errorText: { fontSize: 12, color: '#c62828', marginTop: 4 },
 });

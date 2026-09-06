@@ -44,6 +44,14 @@ export type S3ListResult = {
   nextToken?: string;
 };
 
+export type TreeFile = {
+  uri: string;
+  name: string;
+  relativePath: string;
+  size: number;
+  mimeType?: string;
+};
+
 export type UploadItemInput = {
   id: string;
   uri: string;
@@ -101,6 +109,20 @@ export const S3Uploader = {
   },
   deleteObject(key: string): Promise<void> {
     return S3UploaderNative.deleteObject(key);
+  },
+  deletePrefix(prefix: string): Promise<{ deleted: number }> {
+    return S3UploaderNative.deletePrefix(prefix);
+  },
+  createFolder(prefix: string, name: string): Promise<void> {
+    return S3UploaderNative.createFolder(prefix, name);
+  },
+  /** Déplace/renomme un objet, entièrement côté serveur. */
+  moveObject(srcKey: string, dstKey: string): Promise<void> {
+    return S3UploaderNative.moveObject(srcKey, dstKey);
+  },
+  /** Énumère récursivement un dossier Android choisi via pickDirectory. */
+  listTree(treeUri: string): Promise<{ files: TreeFile[] }> {
+    return S3UploaderNative.listTree(treeUri);
   },
   pause(): Promise<void> {
     return S3UploaderNative.pause();

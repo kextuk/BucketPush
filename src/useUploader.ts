@@ -109,9 +109,23 @@ export function useUploader() {
 
   const list = Object.values(items).sort((a, b) => a.displayName.localeCompare(b.displayName));
 
+  const active = list.filter(i => i.status === 'uploading' || i.status === 'queued');
+  const relevant = list.filter(i => i.status !== 'skipped' && i.status !== 'canceled');
+  const totalBytes = relevant.reduce((s, i) => s + (i.totalBytes || i.sizeBytes), 0);
+  const uploadedBytes = relevant.reduce((s, i) => s + i.uploadedBytes, 0);
+  const summary = {
+    activeCount: active.length,
+    totalCount: relevant.length,
+    doneCount: relevant.filter(i => i.status === 'completed').length,
+    failedCount: list.filter(i => i.status === 'failed').length,
+    pct: totalBytes > 0 ? Math.round((uploadedBytes / totalBytes) * 100) : 0,
+    speedBps: active.reduce((s, i) => s + i.speedBps, 0),
+  };
+
   return {
     items: list,
     queueStatus,
+    summary,
     hydrate,
     pause: () => S3Uploader.pause(),
     resume: () => S3Uploader.resume(),
