@@ -1,9 +1,10 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Keychain from 'react-native-keychain';
 import type { S3Config } from './native/S3Uploader';
 
-const NON_SECRET_KEY = 's3pusher.config.v1';
-const KEYCHAIN_SERVICE = 's3pusher.credentials';
+// Config non secrète et secrets sont stockés dans le trousseau (Keystore Android),
+// sous deux services distincts. Pas d'AsyncStorage (évite la dépendance KSP).
+const SETTINGS_SERVICE = 's3pusher.settings';
+const CREDENTIALS_SERVICE = 's3pusher.credentials';
 
 export type AppConfig = {
   endpoint: string;
@@ -34,11 +35,16 @@ export const DEFAULT_CONFIG: AppConfig = {
 };
 
 export async function loadConfig(): Promise<AppConfig> {
-  const raw = await AsyncStorage.getItem(NON_SECRET_KEY);
-  const parsed = raw ? JSON.parse(raw) : {};
+  let parsed: Partial<AppConfig> = {};
+  try {
+    const stored = await Keychain.getGenericPassword({ service: SETTINGS_SERVICE });
+    if (stored && stored.password) parsed = JSON.parse(stored.password);
+  } catch {
+    parsed = {};
+  }
   let hasCredentials = false;
   try {
-    const creds = await Keychain.getGenericPassword({ service: KEYCHAIN_SERVICE });
+    const creds = await Keychain.getGenericPassword({ service: CREDENTIALS_SERVICE });
     hasCredentials = !!creds && !!creds.password;
   } catch {
     hasCredentials = false;
@@ -50,11 +56,12 @@ export async function saveConfig(
   cfg: AppConfig,
   creds?: { accessKeyId: string; secretAccessKey: string },
 ): Promise<void> {
-  // `hasCredentials` est recalculé depuis le keychain au chargement ; inutile de le filtrer.
-  await AsyncStorage.setItem(NON_SECRET_KEY, JSON.stringify(cfg));
+  await Keychain.setGenericPassword('settings', JSON.stringify(cfg), {
+    service: SETTINGS_SERVICE,
+  });
   if (creds && creds.accessKeyId && creds.secretAccessKey) {
     await Keychain.setGenericPassword(creds.accessKeyId, creds.secretAccessKey, {
-      service: KEYCHAIN_SERVICE,
+      service: CREDENTIALS_SERVICE,
     });
   }
 }
@@ -64,7 +71,7 @@ export async function readCredentials(): Promise<{
   secretAccessKey: string;
 } | null> {
   try {
-    const creds = await Keychain.getGenericPassword({ service: KEYCHAIN_SERVICE });
+    const creds = await Keychain.getGenericPassword({ service: CREDENTIALS_SERVICE });
     if (!creds || !creds.password) return null;
     return { accessKeyId: creds.username, secretAccessKey: creds.password };
   } catch {
@@ -73,7 +80,7 @@ export async function readCredentials(): Promise<{
 }
 
 export async function clearCredentials(): Promise<void> {
-  await Keychain.resetGenericPassword({ service: KEYCHAIN_SERVICE });
+  await Keychain.resetGenericPassword({ service: CREDENTIALS_SERVICE });
 }
 
 /** Assemble la config native (secrets inclus) à passer à `S3Uploader.configure`. */
