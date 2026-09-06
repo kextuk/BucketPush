@@ -171,8 +171,20 @@ class MultipartUploader(
 
     private suspend fun complete(item: ItemRow, uploadId: String): Result {
         val parts = db.partsFor(item.id)
-        retry("CompleteMultipartUpload") {
-            s3.completeMultipartUpload(item.key, uploadId, parts)
+        try {
+            retry("CompleteMultipartUpload") {
+                s3.completeMultipartUpload(item.key, uploadId, parts)
+            }
+        } catch (e: Exception) {
+            // le Complete a pu réussir malgré une réponse perdue : si l'objet est là
+            // avec la bonne taille, on considère que c'est bon (évite un ré-upload =
+            // 2ᵉ version sur un bucket B2 « keep all versions »)
+            val remote = try {
+                s3.headObject(item.key)
+            } catch (_: Exception) {
+                null
+            }
+            if (remote != item.sizeBytes) throw e
         }
         db.setUploadedBytes(item.id, item.sizeBytes)
         db.deletePartsFor(item.id)

@@ -57,6 +57,22 @@ class S3Client(
         val nextToken: String?,
     )
 
+    data class ObjectVersion(
+        val key: String,
+        val versionId: String,
+        val size: Long,
+        val lastModified: String?,
+        val isLatest: Boolean,
+        val isDeleteMarker: Boolean,
+    )
+
+    data class VersionsResult(
+        val prefixes: List<String>,
+        val versions: List<ObjectVersion>,
+        val nextKeyMarker: String?,
+        val nextVersionIdMarker: String?,
+    )
+
     // --- Opérations ---------------------------------------------------------
 
     /** Test de connectivité / credentials : HEAD sur le bucket. */
@@ -104,6 +120,39 @@ class S3Client(
         execute(build("DELETE", url, config.canonicalPath(key), emptyMap(),
             SigV4Signer.EMPTY_SHA256, null)).use { r ->
             if (!r.isSuccessful && r.code != 404) throw parseError(r, "DeleteObject a échoué")
+        }
+    }
+
+    /** Liste les versions (S3 `?versions`, supporté par B2). `delimiter=""` = récursif. */
+    fun listObjectVersions(
+        prefix: String,
+        keyMarker: String?,
+        versionIdMarker: String?,
+        delimiter: String = "/",
+    ): VersionsResult {
+        val query = buildMap {
+            put("versions", "")
+            if (delimiter.isNotEmpty()) put("delimiter", delimiter)
+            put("max-keys", "1000")
+            if (prefix.isNotEmpty()) put("prefix", prefix)
+            if (keyMarker != null) put("key-marker", keyMarker)
+            if (versionIdMarker != null) put("version-id-marker", versionIdMarker)
+        }
+        val url = withQuery(config.bucketUrl(), query)
+        execute(build("GET", url, config.canonicalBucketPath(), query,
+            SigV4Signer.EMPTY_SHA256, null)).use { r ->
+            val body = r.body?.string().orEmpty()
+            if (!r.isSuccessful) throw parseError(r, body, "ListObjectVersions a échoué")
+            return parseVersions(body)
+        }
+    }
+
+    fun deleteVersion(key: String, versionId: String) {
+        val query = mapOf("versionId" to versionId)
+        val url = withQuery(config.objectUrl(key), query)
+        execute(build("DELETE", url, config.canonicalPath(key), query,
+            SigV4Signer.EMPTY_SHA256, null)).use { r ->
+            if (!r.isSuccessful && r.code != 404) throw parseError(r, "DeleteVersion a échoué")
         }
     }
 
@@ -158,12 +207,56 @@ class S3Client(
         if (srcKey == dstKey) return
         val size = headObject(srcKey) ?: throw IOException("Objet source introuvable : $srcKey")
         if (size <= SINGLE_COPY_THRESHOLD) {
-            withRetry("CopyObject") { copyObject(srcKey, dstKey) }
+            // idempotent : si une réponse est perdue mais que la copie a réussi, on
+            // ne recommence pas (sinon B2 crée une 2ᵉ version de la même clé)
+            withRetryDedup(dstKey, size, "CopyObject") { copyObject(srcKey, dstKey) }
             onPart?.invoke(1, 1, size, size)
         } else {
             multipartCopy(srcKey, dstKey, size, onPart)
         }
         withRetry("DeleteObject") { deleteObject(srcKey) }
+    }
+
+    private fun objectExistsWithSize(key: String, expected: Long): Boolean =
+        try {
+            headObject(key)?.let { it == expected } ?: false
+        } catch (_: Exception) {
+            false
+        }
+
+    /**
+     * Comme [withRetry] mais, avant chaque nouvelle tentative, vérifie si l'objet destination
+     * existe déjà avec la bonne taille → l'opération avait réussi malgré la réponse perdue.
+     */
+    private suspend fun withRetryDedup(
+        dstKey: String,
+        expectedSize: Long,
+        label: String,
+        maxAttempts: Int = 6,
+        block: () -> Unit,
+    ) {
+        var attempt = 0
+        var delayMs = 1000L
+        while (true) {
+            try {
+                block()
+                return
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (e: Exception) {
+                if (objectExistsWithSize(dstKey, expectedSize)) return
+                attempt++
+                val retryable = e !is S3Exception || e.retryable
+                if (!retryable || attempt >= maxAttempts) throw e
+                val wait = if (e is S3Exception) {
+                    maxOf(delayMs, (e.retryAfterSeconds ?: 0L) * 1000L)
+                } else {
+                    delayMs
+                }
+                delay(wait + Random.nextLong(0, 500))
+                delayMs = (delayMs * 2).coerceAtMost(20_000L)
+            }
+        }
     }
 
     private fun copySource(srcKey: String): String {
@@ -228,7 +321,8 @@ class S3Client(
             val parts = etags.mapIndexed { i, e ->
                 UploadedPart(i + 1, e ?: throw IOException("Partie ${i + 1} manquante"))
             }
-            withRetry("CompleteMultipartUpload") {
+            // idempotent : un Complete rejoué (réponse perdue) échouerait en NoSuchUpload
+            withRetryDedup(dstKey, size, "CompleteMultipartUpload") {
                 completeMultipartUpload(dstKey, uploadId, parts)
             }
         } catch (e: Exception) {
@@ -542,6 +636,78 @@ class S3Client(
             event = parser.next()
         }
         return ListResult(prefixes, objects, if (truncated) nextToken else null)
+    }
+
+    private fun parseVersions(xml: String): VersionsResult {
+        val prefixes = ArrayList<String>()
+        val out = ArrayList<ObjectVersion>()
+        var truncated = false
+        var nextKey: String? = null
+        var nextVer: String? = null
+
+        var inItem = false
+        var isDelMarker = false
+        var inCommon = false
+        var key: String? = null
+        var vid: String? = null
+        var size = 0L
+        var mod: String? = null
+        var latest = false
+        var curPrefix: String? = null
+
+        val p = Xml.newPullParser()
+        p.setInput(StringReader(xml))
+        var ev = p.eventType
+        var tag: String? = null
+        while (ev != XmlPullParser.END_DOCUMENT) {
+            when (ev) {
+                XmlPullParser.START_TAG -> {
+                    tag = p.name
+                    when (tag) {
+                        "Version", "DeleteMarker" -> {
+                            inItem = true; isDelMarker = tag == "DeleteMarker"
+                            key = null; vid = null; size = 0L; mod = null; latest = false
+                        }
+                        "CommonPrefixes" -> { inCommon = true; curPrefix = null }
+                    }
+                }
+                XmlPullParser.TEXT -> {
+                    val t = p.text?.trim().orEmpty()
+                    if (t.isNotEmpty()) when (tag) {
+                        "Key" -> if (inItem) key = t
+                        "VersionId" -> if (inItem) vid = t
+                        "Size" -> if (inItem) size = t.toLongOrNull() ?: 0L
+                        "LastModified" -> if (inItem) mod = t
+                        "IsLatest" -> if (inItem) latest = t.equals("true", ignoreCase = true)
+                        "Prefix" -> if (inCommon) curPrefix = t
+                        "IsTruncated" -> truncated = t.equals("true", ignoreCase = true)
+                        "NextKeyMarker" -> nextKey = t
+                        "NextVersionIdMarker" -> nextVer = t
+                    }
+                }
+                XmlPullParser.END_TAG -> {
+                    when (p.name) {
+                        "Version", "DeleteMarker" -> {
+                            val k = key
+                            val v = vid
+                            if (k != null && v != null) {
+                                out.add(ObjectVersion(k, v, size, mod, latest, isDelMarker))
+                            }
+                            inItem = false
+                        }
+                        "CommonPrefixes" -> { curPrefix?.let { prefixes.add(it) }; inCommon = false }
+                    }
+                    tag = null
+                }
+            }
+            ev = p.next()
+        }
+        return VersionsResult(
+            prefixes,
+            out,
+            if (truncated) nextKey else null,
+            if (truncated) nextVer else null,
+        )
     }
 
     private fun extractTag(xml: String, tag: String): String? {

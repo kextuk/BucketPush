@@ -328,6 +328,81 @@ class S3UploaderModule(private val reactContext: ReactApplicationContext) :
         }
     }
 
+    @ReactMethod
+    fun listObjectVersions(
+        prefix: String,
+        keyMarker: String?,
+        versionIdMarker: String?,
+        promise: Promise,
+    ) {
+        withS3(promise) { s3, _ ->
+            val res = s3.listObjectVersions(prefix, keyMarker, versionIdMarker)
+            promise.resolve(
+                Arguments.createMap().apply {
+                    putArray("prefixes", Arguments.createArray().apply {
+                        res.prefixes.forEach { pushString(it) }
+                    })
+                    putArray("versions", Arguments.createArray().apply {
+                        res.versions.forEach { v ->
+                            pushMap(Arguments.createMap().apply {
+                                putString("key", v.key)
+                                putString("versionId", v.versionId)
+                                putDouble("size", v.size.toDouble())
+                                v.lastModified?.let { putString("lastModified", it) }
+                                putBoolean("isLatest", v.isLatest)
+                                putBoolean("isDeleteMarker", v.isDeleteMarker)
+                            })
+                        }
+                    })
+                    res.nextKeyMarker?.let { putString("nextKeyMarker", it) }
+                    res.nextVersionIdMarker?.let { putString("nextVersionIdMarker", it) }
+                },
+            )
+        }
+    }
+
+    @ReactMethod
+    fun deleteVersion(key: String, versionId: String, promise: Promise) {
+        withS3(promise) { s3, _ ->
+            s3.deleteVersion(key, versionId)
+            promise.resolve(null)
+        }
+    }
+
+    /** Supprime toutes les versions non-courantes sous un préfixe. Résout `{ deleted }`. */
+    @ReactMethod
+    fun purgeOldVersions(prefix: String, promise: Promise) {
+        withS3(promise) { s3, _ ->
+            val toDelete = ArrayList<Pair<String, String>>()
+            var km: String? = null
+            var vm: String? = null
+            do {
+                val res = s3.listObjectVersions(prefix, km, vm, delimiter = "")
+                res.versions.forEach { if (!it.isLatest) toDelete.add(it.key to it.versionId) }
+                km = res.nextKeyMarker
+                vm = res.nextVersionIdMarker
+            } while (km != null || vm != null)
+
+            val deleted = java.util.concurrent.atomic.AtomicInteger(0)
+            kotlinx.coroutines.coroutineScope {
+                val sem = kotlinx.coroutines.sync.Semaphore(8)
+                toDelete.forEach { (k, v) ->
+                    launch(kotlinx.coroutines.Dispatchers.IO) {
+                        sem.acquire()
+                        try {
+                            s3.deleteVersion(k, v)
+                            deleted.incrementAndGet()
+                        } catch (_: Exception) {
+                        } finally {
+                            sem.release()
+                        }
+                    }
+                }
+            }
+            promise.resolve(Arguments.createMap().apply { putInt("deleted", deleted.get()) })
+        }
+    }
+
     /** Supprime tout ce qui est sous un préfixe. Résout `{ deleted }`. */
     @ReactMethod
     fun deletePrefix(prefix: String, promise: Promise) {

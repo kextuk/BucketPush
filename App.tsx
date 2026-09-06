@@ -12,6 +12,7 @@ import { QueueScreen } from './src/screens/QueueScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { BrowserScreen } from './src/screens/BrowserScreen';
 import { ProfilesScreen } from './src/screens/ProfilesScreen';
+import { VersionsScreen } from './src/screens/VersionsScreen';
 import { loadConfig, toNativeConfig } from './src/config';
 import { S3Uploader } from './src/native/S3Uploader';
 
@@ -20,6 +21,7 @@ export type RootStackParamList = {
   Profiles: undefined;
   Settings: { profileId?: string } | undefined;
   Browser: undefined;
+  Versions: { objectKey: string };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -72,6 +74,11 @@ function App(): React.JSX.Element {
             name="Settings"
             component={SettingsScreen}
             options={{ title: 'Profil S3' }}
+          />
+          <Stack.Screen
+            name="Versions"
+            component={VersionsScreen}
+            options={{ title: 'Versions' }}
           />
         </Stack.Navigator>
       </NavigationContainer>

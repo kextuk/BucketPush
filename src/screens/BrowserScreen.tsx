@@ -50,6 +50,8 @@ export function BrowserScreen({ navigation }: Props) {
     { label: string; done: number; total: number; pct?: number } | null
   >(null);
   const [sheet, setSheet] = useState(false);
+  const [toolsMenu, setToolsMenu] = useState(false);
+  const [folderMenu, setFolderMenu] = useState<{ prefix: string; name: string } | null>(null);
   const [prompt, setPrompt] = useState<
     { kind: 'newFolder' } | { kind: 'rename'; key: string } | null
   >(null);
@@ -282,26 +284,58 @@ export function BrowserScreen({ navigation }: Props) {
     }
   };
 
-  const onFolderLongPress = (folderPrefix: string, name: string) => {
-    Alert.alert(name + '/', 'Supprimer ce dossier et tout son contenu ?', [
-      { text: 'Annuler', style: 'cancel' },
-      {
-        text: 'Supprimer',
-        style: 'destructive',
-        onPress: async () => {
-          setOp({ label: 'Suppression', done: 0, total: 0 });
-          try {
-            const { deleted } = await S3Uploader.deletePrefix(folderPrefix);
-            reload();
-            Alert.alert('Supprimé', `${deleted} objet(s).`);
-          } catch (e: any) {
-            Alert.alert('Échec', String(e?.message ?? e));
-          } finally {
-            setOp(null);
-          }
+  const deleteFolder = (folderPrefix: string) => {
+    Alert.alert(
+      'Supprimer ce dossier ?',
+      folderPrefix + '\nTout son contenu sera supprimé.',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Supprimer',
+          style: 'destructive',
+          onPress: async () => {
+            setOp({ label: 'Suppression', done: 0, total: 0 });
+            try {
+              const { deleted } = await S3Uploader.deletePrefix(folderPrefix);
+              reload();
+              Alert.alert('Supprimé', `${deleted} objet(s).`);
+            } catch (e: any) {
+              Alert.alert('Échec', String(e?.message ?? e));
+            } finally {
+              setOp(null);
+            }
+          },
         },
-      },
-    ], { cancelable: true });
+      ],
+      { cancelable: true },
+    );
+  };
+
+  const purgeVersions = (scopePrefix: string, label: string) => {
+    Alert.alert(
+      'Purger les anciennes versions ?',
+      `${label}\nToutes les versions non courantes seront supprimées (irréversible).`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Purger',
+          style: 'destructive',
+          onPress: async () => {
+            setOp({ label: 'Purge des versions', done: 0, total: 0 });
+            try {
+              const { deleted } = await S3Uploader.purgeOldVersions(scopePrefix);
+              reload();
+              Alert.alert('Purge terminée', `${deleted} version(s) supprimée(s).`);
+            } catch (e: any) {
+              Alert.alert('Échec', String(e?.message ?? e));
+            } finally {
+              setOp(null);
+            }
+          },
+        },
+      ],
+      { cancelable: true },
+    );
   };
 
   // --- Rendu -------------------------------------------------------------
@@ -351,6 +385,9 @@ export function BrowserScreen({ navigation }: Props) {
           <Pressable onPress={cycleSort(sortMode, setSortMode)} hitSlop={8} style={styles.topAction}>
             <Text style={styles.sortBtn}>{sortLabel(sortMode)}</Text>
           </Pressable>
+          <Pressable onPress={() => setToolsMenu(true)} hitSlop={8} style={styles.topAction}>
+            <Text style={styles.topActionText}>⋮</Text>
+          </Pressable>
         </View>
       ) : (
         <View style={[styles.actionBar, mode === 'move' && styles.actionBarMove]}>
@@ -369,11 +406,20 @@ export function BrowserScreen({ navigation }: Props) {
                 </Text>
               </Pressable>
               {selected.length === 1 ? (
-                <Pressable
-                  onPress={() => setPrompt({ kind: 'rename', key: selected[0] })}
-                  hitSlop={8}>
-                  <Text style={styles.abAction}>Renommer</Text>
-                </Pressable>
+                <>
+                  <Pressable
+                    onPress={() => setPrompt({ kind: 'rename', key: selected[0] })}
+                    hitSlop={8}>
+                    <Text style={styles.abAction}>Renommer</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() =>
+                      navigation.navigate('Versions', { objectKey: selected[0] })
+                    }
+                    hitSlop={8}>
+                    <Text style={styles.abAction}>Versions</Text>
+                  </Pressable>
+                </>
               ) : null}
               <Pressable onPress={deleteSelected} hitSlop={8} disabled={!selected.length}>
                 <Text style={[styles.abAction, styles.abDanger, !selected.length && styles.abDisabled]}>
@@ -447,7 +493,9 @@ export function BrowserScreen({ navigation }: Props) {
             <Pressable
               style={styles.row}
               onPress={() => setPrefix(item.prefix)}
-              onLongPress={() => mode === 'browse' && onFolderLongPress(item.prefix, item.name)}>
+              onLongPress={() =>
+                mode === 'browse' && setFolderMenu({ prefix: item.prefix, name: item.name })
+              }>
               <Text style={styles.folderIcon}>📁</Text>
               <Text style={styles.rowName} numberOfLines={1}>
                 {item.name}
@@ -516,6 +564,46 @@ export function BrowserScreen({ navigation }: Props) {
           { label: 'Dossier Android…', onPress: addFolder },
         ]}
         onClose={() => setSheet(false)}
+      />
+
+      <ActionSheet
+        visible={toolsMenu}
+        title="Nettoyage"
+        options={[
+          {
+            label: 'Purger les anciennes versions (dossier courant)',
+            onPress: () =>
+              purgeVersions(prefix, prefix ? `/${prefix}` : 'racine du bucket'),
+          },
+          {
+            label: 'Purger les anciennes versions (tout le bucket)',
+            destructive: true,
+            onPress: () => purgeVersions('', 'tout le bucket'),
+          },
+        ]}
+        onClose={() => setToolsMenu(false)}
+      />
+
+      <ActionSheet
+        visible={folderMenu != null}
+        title={folderMenu ? folderMenu.name + '/' : undefined}
+        options={
+          folderMenu
+            ? [
+                {
+                  label: 'Purger les anciennes versions',
+                  onPress: () =>
+                    purgeVersions(folderMenu.prefix, `/${folderMenu.prefix}`),
+                },
+                {
+                  label: 'Supprimer le dossier et son contenu',
+                  destructive: true,
+                  onPress: () => deleteFolder(folderMenu.prefix),
+                },
+              ]
+            : []
+        }
+        onClose={() => setFolderMenu(null)}
       />
 
       <PromptModal

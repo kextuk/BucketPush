@@ -53,6 +53,22 @@ export type TreeFile = {
   mimeType?: string;
 };
 
+export type ObjectVersion = {
+  key: string;
+  versionId: string;
+  size: number;
+  lastModified?: string;
+  isLatest: boolean;
+  isDeleteMarker: boolean;
+};
+
+export type VersionsResult = {
+  prefixes: string[];
+  versions: ObjectVersion[];
+  nextKeyMarker?: string;
+  nextVersionIdMarker?: string;
+};
+
 export type UploadItemInput = {
   id: string;
   uri: string;
@@ -123,6 +139,25 @@ export const S3Uploader = {
   },
   deletePrefix(prefix: string): Promise<{ deleted: number }> {
     return S3UploaderNative.deletePrefix(prefix);
+  },
+  /** Liste les versions B2 (S3 `?versions`). */
+  listObjectVersions(
+    prefix: string,
+    keyMarker?: string,
+    versionIdMarker?: string,
+  ): Promise<VersionsResult> {
+    return S3UploaderNative.listObjectVersions(
+      prefix,
+      keyMarker ?? null,
+      versionIdMarker ?? null,
+    );
+  },
+  deleteVersion(key: string, versionId: string): Promise<void> {
+    return S3UploaderNative.deleteVersion(key, versionId);
+  },
+  /** Supprime toutes les versions non-courantes sous un préfixe. */
+  purgeOldVersions(prefix: string): Promise<{ deleted: number }> {
+    return S3UploaderNative.purgeOldVersions(prefix);
   },
   createFolder(prefix: string, name: string): Promise<void> {
     return S3UploaderNative.createFolder(prefix, name);
