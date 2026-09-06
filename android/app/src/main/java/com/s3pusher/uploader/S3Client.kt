@@ -1,6 +1,12 @@
 package com.s3pusher.uploader
 
 import android.util.Xml
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
 import okhttp3.HttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -13,6 +19,9 @@ import java.io.IOException
 import java.io.StringReader
 import java.util.Date
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
+import kotlin.random.Random
 
 /**
  * Opérations S3 multipart bas niveau : signature SigV4 + HTTP via OkHttp.
@@ -23,8 +32,12 @@ class S3Client(
     private val http: OkHttpClient = defaultHttpClient(),
 ) {
 
-    class S3Exception(val statusCode: Int, val s3Code: String?, message: String) :
-        IOException(message) {
+    class S3Exception(
+        val statusCode: Int,
+        val s3Code: String?,
+        message: String,
+        val retryAfterSeconds: Long? = null,
+    ) : IOException(message) {
         val retryable: Boolean
             get() = statusCode == 0 || // erreur réseau
                 statusCode in 500..599 ||
@@ -128,14 +141,29 @@ class S3Client(
     }
 
     /**
-     * Déplace (renomme) un objet : copie **côté serveur** (aucune donnée ne transite par
-     * le client) puis suppression de la source. Copie simple ≤ 5 GiB, sinon multipart.
+     * Déplace/renomme un objet : copie **côté serveur** (aucune donnée ne transite par le
+     * client) puis suppression de la source.
+     *
+     * Sous [SINGLE_COPY_THRESHOLD] : un seul CopyObject.
+     * Au-dessus : copie multipart, parties [COPY_PART_SIZE] lancées en parallèle (borné par
+     * `config.moveConcurrency`), retry + backoff honorant `Retry-After` (throttling B2).
+     *
+     * @param onPart progression : (partiesFaites, partiesTotal, octetsCopiés, octetsTotal)
      */
-    fun moveObject(srcKey: String, dstKey: String) {
+    suspend fun moveObject(
+        srcKey: String,
+        dstKey: String,
+        onPart: ((Int, Int, Long, Long) -> Unit)? = null,
+    ) {
         if (srcKey == dstKey) return
         val size = headObject(srcKey) ?: throw IOException("Objet source introuvable : $srcKey")
-        if (size <= COPY_LIMIT) copyObject(srcKey, dstKey) else multipartCopy(srcKey, dstKey, size)
-        deleteObject(srcKey)
+        if (size <= SINGLE_COPY_THRESHOLD) {
+            withRetry("CopyObject") { copyObject(srcKey, dstKey) }
+            onPart?.invoke(1, 1, size, size)
+        } else {
+            multipartCopy(srcKey, dstKey, size, onPart)
+        }
+        withRetry("DeleteObject") { deleteObject(srcKey) }
     }
 
     private fun copySource(srcKey: String): String {
@@ -158,27 +186,77 @@ class S3Client(
         }
     }
 
-    private fun multipartCopy(srcKey: String, dstKey: String, size: Long) {
-        val uploadId = createMultipartUpload(dstKey, null)
+    private suspend fun multipartCopy(
+        srcKey: String,
+        dstKey: String,
+        size: Long,
+        onPart: ((Int, Int, Long, Long) -> Unit)?,
+    ) {
+        val uploadId = withRetry("CreateMultipartUpload") { createMultipartUpload(dstKey, null) }
         try {
-            val parts = ArrayList<UploadedPart>()
+            val ranges = ArrayList<Triple<Int, Long, Long>>()
             var offset = 0L
-            var partNumber = 1
+            var n = 1
             while (offset < size) {
-                val end = minOf(offset + COPY_LIMIT, size) - 1
-                parts.add(
-                    UploadedPart(
-                        partNumber,
-                        uploadPartCopy(dstKey, uploadId, partNumber, srcKey, offset, end),
-                    ),
-                )
+                val end = minOf(offset + COPY_PART_SIZE, size) - 1
+                ranges.add(Triple(n, offset, end))
                 offset = end + 1
-                partNumber++
+                n++
             }
-            completeMultipartUpload(dstKey, uploadId, parts)
+            val total = ranges.size
+            val etags = arrayOfNulls<String>(total)
+            val done = AtomicInteger(0)
+            val bytes = AtomicLong(0)
+            val sem = Semaphore(config.moveConcurrency.coerceIn(1, 16))
+            coroutineScope {
+                for ((num, start, end) in ranges) {
+                    launch(Dispatchers.IO) {
+                        sem.acquire()
+                        try {
+                            etags[num - 1] = withRetry("UploadPartCopy $num") {
+                                uploadPartCopy(dstKey, uploadId, num, srcKey, start, end)
+                            }
+                            val d = done.incrementAndGet()
+                            val b = bytes.addAndGet(end - start + 1)
+                            onPart?.invoke(d, total, b, size)
+                        } finally {
+                            sem.release()
+                        }
+                    }
+                }
+            }
+            val parts = etags.mapIndexed { i, e ->
+                UploadedPart(i + 1, e ?: throw IOException("Partie ${i + 1} manquante"))
+            }
+            withRetry("CompleteMultipartUpload") {
+                completeMultipartUpload(dstKey, uploadId, parts)
+            }
         } catch (e: Exception) {
             runCatching { abortMultipartUpload(dstKey, uploadId) }
             throw e
+        }
+    }
+
+    /** Retry avec backoff exponentiel + jitter ; honore `Retry-After` (throttling B2). */
+    private suspend fun <T> withRetry(label: String, maxAttempts: Int = 6, block: () -> T): T {
+        var attempt = 0
+        var delayMs = 1000L
+        while (true) {
+            try {
+                return block()
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (e: S3Exception) {
+                attempt++
+                if (!e.retryable || attempt >= maxAttempts) throw e
+                val wait = maxOf(delayMs, (e.retryAfterSeconds ?: 0L) * 1000L)
+                delay(wait + Random.nextLong(0, 500))
+            } catch (e: IOException) {
+                attempt++
+                if (attempt >= maxAttempts) throw e
+                delay(delayMs + Random.nextLong(0, 500))
+            }
+            delayMs = (delayMs * 2).coerceAtMost(20_000L)
         }
     }
 
@@ -358,9 +436,10 @@ class S3Client(
     private fun parseError(r: Response, body: String, fallbackMsg: String): S3Exception {
         val code = extractTag(body, "Code")
         val msg = extractTag(body, "Message")
+        val retryAfter = r.header("Retry-After")?.trim()?.toLongOrNull()
         return S3Exception(r.code, code,
             "$fallbackMsg (HTTP ${r.code}${if (code != null) " $code" else ""}" +
-                "${if (msg != null) " : $msg" else ""})")
+                "${if (msg != null) " : $msg" else ""})", retryAfter)
     }
 
     // --- Parsing XML (android.util.Xml, pas de dépendance) --------------------
@@ -481,15 +560,18 @@ class S3Client(
     }
 
     companion object {
-        /** Plafond d'une copie S3 simple ; au-delà → copie multipart. */
-        private const val COPY_LIMIT = 5L * 1024 * 1024 * 1024
+        /** Sous ce seuil : un seul CopyObject. Au-dessus : copie multipart. */
+        private const val SINGLE_COPY_THRESHOLD = 128L * 1024 * 1024
+
+        /** Taille d'une partie de copie multipart (donne la granularité de progression). */
+        private const val COPY_PART_SIZE = 128L * 1024 * 1024
 
         private val EMPTY_BODY: RequestBody = ByteArray(0).toRequestBody(null)
 
         fun defaultHttpClient(): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(120, TimeUnit.SECONDS)
-            .writeTimeout(0, TimeUnit.SECONDS)   // parts volumineuses sur réseau lent
+            .readTimeout(600, TimeUnit.SECONDS)  // les copies serveur (B2) sont synchrones et longues
+            .writeTimeout(0, TimeUnit.SECONDS)
             .callTimeout(0, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .build()

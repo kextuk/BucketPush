@@ -17,6 +17,7 @@ export type ProfileMeta = {
   partSizeMiB?: number;
   maxConcurrentParts?: number;
   maxConcurrentFiles?: number;
+  moveConcurrency?: number;
 };
 
 export type ProfileStore = {
@@ -36,6 +37,7 @@ export const PROFILE_DEFAULTS: Omit<ProfileMeta, 'id' | 'name'> = {
   partSizeMiB: undefined,
   maxConcurrentParts: 2,
   maxConcurrentFiles: 1,
+  moveConcurrency: 4,
 };
 
 const META_KEYS: (keyof ProfileMeta)[] = [
@@ -50,6 +52,7 @@ const META_KEYS: (keyof ProfileMeta)[] = [
   'partSizeMiB',
   'maxConcurrentParts',
   'maxConcurrentFiles',
+  'moveConcurrency',
 ];
 
 export function makeId(): string {

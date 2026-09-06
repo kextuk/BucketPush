@@ -248,6 +248,19 @@ export function SettingsScreen({ navigation, route }: Props) {
           />
         </Field>
 
+        <Field
+          label="Déplacements en parallèle"
+          hint="défaut 4 ; monte à 8‑10 si ton fournisseur l'encaisse (sinon 503)">
+          <TextInput
+            style={styles.input}
+            keyboardType="number-pad"
+            value={String(cfg.moveConcurrency ?? 4)}
+            onChangeText={t =>
+              set('moveConcurrency', Math.min(16, Math.max(1, parseInt(t, 10) || 4)))
+            }
+          />
+        </Field>
+
         <View style={styles.actions}>
           <Pressable style={[styles.btn, styles.btnGhost]} onPress={onTest} disabled={testing}>
             <Text style={styles.btnGhostText}>

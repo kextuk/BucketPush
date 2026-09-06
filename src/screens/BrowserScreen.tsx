@@ -46,7 +46,9 @@ export function BrowserScreen({ navigation }: Props) {
   const [mode, setMode] = useState<Mode>('browse');
   const [selected, setSelected] = useState<string[]>([]);
   const [sortMode, setSortMode] = useState<SortMode>('name');
-  const [op, setOp] = useState<{ label: string; done: number; total: number } | null>(null);
+  const [op, setOp] = useState<
+    { label: string; done: number; total: number; pct?: number } | null
+  >(null);
   const [sheet, setSheet] = useState(false);
   const [prompt, setPrompt] = useState<
     { kind: 'newFolder' } | { kind: 'rename'; key: string } | null
@@ -96,6 +98,16 @@ export function BrowserScreen({ navigation }: Props) {
   useEffect(() => {
     load(prefix);
   }, [prefix, load]);
+
+  useEffect(() => {
+    const sub = S3Uploader.onMoveProgress(e => {
+      if (e.filesTotal <= 0) return;
+      const pct =
+        e.bytesTotal > 0 ? Math.round((e.bytesCopied / e.bytesTotal) * 100) : 0;
+      setOp({ label: 'Déplacement', done: e.filesDone, total: e.filesTotal, pct });
+    });
+    return () => sub.remove();
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -181,15 +193,33 @@ export function BrowserScreen({ navigation }: Props) {
     if (failed) Alert.alert('Terminé avec des erreurs', `${failed}/${keys.length} en échec.`);
   };
 
+  const runMove = async (pairs: { src: string; dst: string }[]) => {
+    if (!pairs.length) return;
+    setOp({ label: 'Déplacement', done: 0, total: pairs.length, pct: 0 });
+    try {
+      const res = await S3Uploader.moveObjects(pairs);
+      if (res.failed) {
+        Alert.alert(
+          'Déplacement terminé',
+          `${res.moved} ok · ${res.failed} en échec\n` + res.errors.slice(0, 6).join('\n'),
+        );
+      }
+    } catch (e: any) {
+      Alert.alert('Échec', String(e?.message ?? e));
+    } finally {
+      setOp(null);
+      exitMode();
+      reload();
+    }
+  };
+
   const pasteHere = () => {
     const conflict = selected.some(k => prefixOf(k) === prefix);
     if (conflict) {
       Alert.alert('Destination invalide', 'Certains fichiers sont déjà dans ce dossier.');
       return;
     }
-    runBatch('Déplacement', selected, k =>
-      S3Uploader.moveObject(k, joinKey(prefix, baseName(k))),
-    );
+    runMove(selected.map(k => ({ src: k, dst: joinKey(prefix, baseName(k)) })));
   };
 
   const deleteSelected = () => {
@@ -218,10 +248,7 @@ export function BrowserScreen({ navigation }: Props) {
         await S3Uploader.createFolder(prefix, name);
       });
     } else {
-      const dst = joinKey(prefixOf(p.key), name);
-      runBatch('Renommage', ['x'], async () => {
-        await S3Uploader.moveObject(p.key, dst);
-      });
+      runMove([{ src: p.key, dst: joinKey(prefixOf(p.key), name) }]);
     }
   };
 
@@ -388,12 +415,20 @@ export function BrowserScreen({ navigation }: Props) {
       ) : null}
 
       {op ? (
-        <View style={styles.opBar}>
-          <ActivityIndicator size="small" color="#fff" />
-          <Text style={styles.opText}>
-            {op.label}
-            {op.total > 1 ? ` ${op.done}/${op.total}` : '…'}
-          </Text>
+        <View>
+          <View style={styles.opBar}>
+            <ActivityIndicator size="small" color="#fff" />
+            <Text style={styles.opText}>
+              {op.label}
+              {op.total > 1 ? ` ${op.done}/${op.total}` : ''}
+              {op.pct != null ? ` · ${op.pct}%` : op.total > 1 ? '' : '…'}
+            </Text>
+          </View>
+          {op.pct != null ? (
+            <View style={styles.opTrack}>
+              <View style={[styles.opFill, { width: `${op.pct}%` }]} />
+            </View>
+          ) : null}
         </View>
       ) : null}
 
@@ -581,6 +616,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   opText: { color: '#fff', fontSize: 13 },
+  opTrack: { height: 3, backgroundColor: '#555' },
+  opFill: { height: 3, backgroundColor: '#0a84ff' },
 
   error: { color: '#c62828', padding: 12, fontSize: 13 },
   listPad: { paddingBottom: 180 },

@@ -35,6 +35,13 @@ object UploadEvents {
             partsTotal: Int,
         )
         fun onQueueStatus(status: String, activeCount: Int)
+        fun onMoveProgress(
+            filesDone: Int,
+            filesTotal: Int,
+            bytesCopied: Long,
+            bytesTotal: Long,
+            currentName: String,
+        )
     }
 
     private val listeners = CopyOnWriteArrayList<Listener>()
@@ -50,4 +57,9 @@ object UploadEvents {
 
     fun queueStatus(status: String, activeCount: Int) =
         listeners.forEach { runCatching { it.onQueueStatus(status, activeCount) } }
+
+    fun moveProgress(done: Int, total: Int, bytes: Long, bytesTotal: Long, name: String) =
+        listeners.forEach {
+            runCatching { it.onMoveProgress(done, total, bytes, bytesTotal, name) }
+        }
 }

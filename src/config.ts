@@ -225,6 +225,7 @@ export async function toNativeConfig(cfg: Profile): Promise<S3Config | null> {
     maxConcurrentFiles: cfg.maxConcurrentFiles ?? PROFILE_DEFAULTS.maxConcurrentFiles,
     wifiOnly: cfg.wifiOnly,
     skipExisting: cfg.skipExisting,
+    moveConcurrency: cfg.moveConcurrency ?? PROFILE_DEFAULTS.moveConcurrency,
   };
 }
 

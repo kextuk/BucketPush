@@ -217,7 +217,7 @@ class S3UploaderModule(private val reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun deleteObject(key: String, promise: Promise) {
-        withS3(promise) { s3 ->
+        withS3(promise) { s3, _ ->
             s3.deleteObject(key)
             promise.resolve(null)
         }
@@ -225,7 +225,7 @@ class S3UploaderModule(private val reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun createFolder(prefix: String, name: String, promise: Promise) {
-        withS3(promise) { s3 ->
+        withS3(promise) { s3, _ ->
             val clean = name.trim().trim('/').replace(Regex("[\\\\/]+"), "_")
             if (clean.isEmpty()) {
                 promise.reject("bad_name", "Nom de dossier vide")
@@ -236,19 +236,102 @@ class S3UploaderModule(private val reactContext: ReactApplicationContext) :
         }
     }
 
-    /** Déplace/renomme un objet (copie côté serveur + suppression source). */
+    /**
+     * Déplace/renomme un lot d'objets (copie côté serveur + suppression source).
+     * `pairs` = `[{ src, dst }, …]`. Lot exécuté en parallèle borné (`config.moveConcurrency`),
+     * chaque fichier > 128 Mo en copie multipart. Émet `S3Uploader:onMoveProgress` :
+     * `{ filesDone, filesTotal, bytesCopied, bytesTotal, currentName }`.
+     * Résout `{ moved, failed, errors: [String] }`.
+     */
     @ReactMethod
-    fun moveObject(srcKey: String, dstKey: String, promise: Promise) {
-        withS3(promise) { s3 ->
-            s3.moveObject(srcKey, dstKey)
-            promise.resolve(null)
+    fun moveObjects(pairs: ReadableArray, promise: Promise) {
+        val list = ArrayList<Pair<String, String>>()
+        for (i in 0 until pairs.size()) {
+            val m = pairs.getMap(i) ?: continue
+            val src = m.getString("src") ?: continue
+            val dst = m.getString("dst") ?: continue
+            if (src != dst) list.add(src to dst)
+        }
+        withS3(promise) { s3, config ->
+            val filesTotal = list.size
+            // tailles connues d'avance → pourcentage réel
+            val sizes = java.util.concurrent.ConcurrentHashMap<String, Long>()
+            run {
+                val sem = kotlinx.coroutines.sync.Semaphore(8)
+                kotlinx.coroutines.coroutineScope {
+                    list.forEach { (src, _) ->
+                        launch {
+                            sem.acquire()
+                            try {
+                                sizes[src] = try {
+                                    s3.headObject(src) ?: 0L
+                                } catch (_: Exception) {
+                                    0L
+                                }
+                            } finally {
+                                sem.release()
+                            }
+                        }
+                    }
+                }
+            }
+            val bytesTotal = sizes.values.sum().coerceAtLeast(1L)
+            val filesDone = java.util.concurrent.atomic.AtomicInteger(0)
+            val bytesDone = java.util.concurrent.atomic.AtomicLong(0)
+            val partialByFile = java.util.Collections.synchronizedMap(HashMap<String, Long>())
+            val errors = java.util.Collections.synchronizedList(ArrayList<String>())
+
+            fun emit(name: String) {
+                val partial = synchronized(partialByFile) { partialByFile.values.sum() }
+                UploadEvents.moveProgress(
+                    filesDone.get(), filesTotal,
+                    bytesDone.get() + partial, bytesTotal, name,
+                )
+            }
+            emit("")
+
+            val sem = kotlinx.coroutines.sync.Semaphore(config.moveConcurrency.coerceIn(1, 16))
+            kotlinx.coroutines.coroutineScope {
+                list.forEach { (src, dst) ->
+                    launch(kotlinx.coroutines.Dispatchers.IO) {
+                        sem.acquire()
+                        val name = src.substringAfterLast('/')
+                        try {
+                            s3.moveObject(src, dst) { _, _, bytesCopied, _ ->
+                                partialByFile[src] = bytesCopied
+                                emit(name)
+                            }
+                            synchronized(partialByFile) { partialByFile.remove(src) }
+                            bytesDone.addAndGet(sizes[src] ?: 0L)
+                            filesDone.incrementAndGet()
+                            emit(name)
+                        } catch (e: Exception) {
+                            synchronized(partialByFile) { partialByFile.remove(src) }
+                            errors.add("$name : ${e.message ?: e}")
+                            filesDone.incrementAndGet()
+                            emit(name)
+                        } finally {
+                            sem.release()
+                        }
+                    }
+                }
+            }
+            promise.resolve(
+                Arguments.createMap().apply {
+                    putInt("moved", filesTotal - errors.size)
+                    putInt("failed", errors.size)
+                    putArray("errors", Arguments.createArray().apply {
+                        errors.forEach { pushString(it) }
+                    })
+                },
+            )
         }
     }
 
     /** Supprime tout ce qui est sous un préfixe. Résout `{ deleted }`. */
     @ReactMethod
     fun deletePrefix(prefix: String, promise: Promise) {
-        withS3(promise) { s3 ->
+        withS3(promise) { s3, _ ->
             val keys = s3.listAllKeys(prefix)
             val deleted = java.util.concurrent.atomic.AtomicInteger(0)
             kotlinx.coroutines.coroutineScope {
@@ -333,7 +416,7 @@ class S3UploaderModule(private val reactContext: ReactApplicationContext) :
         }
     }
 
-    private fun withS3(promise: Promise, block: suspend (S3Client) -> Unit) {
+    private fun withS3(promise: Promise, block: suspend (S3Client, S3Config) -> Unit) {
         val config = CredentialStore(reactContext).load()
         if (config == null) {
             promise.reject("no_config", "Aucune configuration enregistrée")
@@ -341,7 +424,7 @@ class S3UploaderModule(private val reactContext: ReactApplicationContext) :
         }
         scope.launch {
             try {
-                block(S3Client(config))
+                block(S3Client(config), config)
             } catch (e: Exception) {
                 promise.reject("s3_op_failed", e.message, e)
             }
@@ -481,6 +564,22 @@ class S3UploaderModule(private val reactContext: ReactApplicationContext) :
         emit("S3Uploader:onQueueStatus", Arguments.createMap().apply {
             putString("status", status)
             putInt("activeCount", activeCount)
+        })
+    }
+
+    override fun onMoveProgress(
+        filesDone: Int,
+        filesTotal: Int,
+        bytesCopied: Long,
+        bytesTotal: Long,
+        currentName: String,
+    ) {
+        emit("S3Uploader:onMoveProgress", Arguments.createMap().apply {
+            putInt("filesDone", filesDone)
+            putInt("filesTotal", filesTotal)
+            putDouble("bytesCopied", bytesCopied.toDouble())
+            putDouble("bytesTotal", bytesTotal.toDouble())
+            putString("currentName", currentName)
         })
     }
 

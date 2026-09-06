@@ -29,6 +29,7 @@ export type S3Config = {
   maxConcurrentFiles?: number;
   wifiOnly?: boolean;
   skipExisting?: boolean;
+  moveConcurrency?: number;
 };
 
 export type EnqueueResult = {
@@ -94,6 +95,16 @@ export type ProgressEvent = {
 export type ItemStatusEvent = { id: string; status: ItemStatus; error?: string };
 export type QueueStatusEvent = { status: QueueStatus; activeCount: number };
 
+export type MovePair = { src: string; dst: string };
+export type MoveResult = { moved: number; failed: number; errors: string[] };
+export type MoveProgressEvent = {
+  filesDone: number;
+  filesTotal: number;
+  bytesCopied: number;
+  bytesTotal: number;
+  currentName: string;
+};
+
 export const S3Uploader = {
   configure(config: S3Config): Promise<void> {
     return S3UploaderNative.configure(config);
@@ -116,9 +127,16 @@ export const S3Uploader = {
   createFolder(prefix: string, name: string): Promise<void> {
     return S3UploaderNative.createFolder(prefix, name);
   },
-  /** Déplace/renomme un objet, entièrement côté serveur. */
-  moveObject(srcKey: string, dstKey: string): Promise<void> {
-    return S3UploaderNative.moveObject(srcKey, dstKey);
+  /**
+   * Déplace/renomme un lot d'objets, entièrement côté serveur (copie + suppression).
+   * Parallèle borné + copie multipart pour les gros fichiers ; émet `onMoveProgress`.
+   */
+  moveObjects(pairs: MovePair[]): Promise<MoveResult> {
+    return S3UploaderNative.moveObjects(pairs);
+  },
+  /** Raccourci pour un seul objet (renommage). */
+  moveObject(srcKey: string, dstKey: string): Promise<MoveResult> {
+    return S3UploaderNative.moveObjects([{ src: srcKey, dst: dstKey }]);
   },
   /** Énumère récursivement un dossier Android choisi via pickDirectory. */
   listTree(treeUri: string): Promise<{ files: TreeFile[] }> {
@@ -151,5 +169,8 @@ export const S3Uploader = {
   },
   onQueueStatus(cb: (e: QueueStatusEvent) => void) {
     return emitter.addListener('S3Uploader:onQueueStatus', cb as (...a: unknown[]) => void);
+  },
+  onMoveProgress(cb: (e: MoveProgressEvent) => void) {
+    return emitter.addListener('S3Uploader:onMoveProgress', cb as (...a: unknown[]) => void);
   },
 };
