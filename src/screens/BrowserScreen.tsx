@@ -24,7 +24,7 @@ import { useUploader } from '../useUploader';
 import { addFilesTo, addFolderTo, joinKey, summarizeEnqueue } from '../upload';
 import { sanitizeSegment } from '../keys';
 import { ActionSheet, PromptModal } from '../components/Sheets';
-import { formatBytes, formatSpeed } from '../format';
+import { formatBytes, formatBytesExact, formatSpeed } from '../format';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Browser'>;
 
@@ -419,7 +419,11 @@ export function BrowserScreen({ navigation }: Props) {
     }
   };
 
-  const showScopeSize = async (scopePrefix: string, label: string) => {
+  const showScopeSize = async (
+    scopePrefix: string,
+    label: string,
+    allVersions = false,
+  ) => {
     setOp({ label: 'Calcul de la taille', done: 0, total: 0 });
     const sub = S3Uploader.onScanProgress(e => {
       setOp({
@@ -429,8 +433,17 @@ export function BrowserScreen({ navigation }: Props) {
       });
     });
     try {
-      const { totalBytes, objectCount } = await S3Uploader.prefixStats(scopePrefix);
-      Alert.alert(label, `${formatBytes(totalBytes)} · ${objectCount} objet(s)`);
+      const { totalBytes, objectCount } = await S3Uploader.prefixStats(
+        scopePrefix,
+        allVersions,
+      );
+      Alert.alert(
+        `${label}${allVersions ? ' — toutes versions' : ''}`,
+        `${formatBytesExact(totalBytes)}\n${objectCount} objet(s)` +
+          (allVersions
+            ? ''
+            : '\n\n(versions actuelles seulement — utilise « taille réelle » pour le total facturé B2)'),
+      );
     } catch (e: any) {
       Alert.alert('Échec du calcul', String(e?.message ?? e));
     } finally {
@@ -946,8 +959,12 @@ export function BrowserScreen({ navigation }: Props) {
               showScopeSize(prefix, prefix ? `/${prefix}` : 'Racine du bucket'),
           },
           {
-            label: 'Taille du dépôt',
+            label: 'Taille du dépôt (versions actuelles)',
             onPress: () => showScopeSize('', 'Dépôt entier'),
+          },
+          {
+            label: 'Taille réelle du dépôt (toutes versions, ≈ B2)',
+            onPress: () => showScopeSize('', 'Dépôt entier', true),
           },
           {
             label: 'Purger les anciennes versions (dossier courant)',

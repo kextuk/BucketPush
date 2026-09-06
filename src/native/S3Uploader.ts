@@ -140,9 +140,15 @@ export const S3Uploader = {
   deletePrefix(prefix: string): Promise<{ deleted: number }> {
     return S3UploaderNative.deletePrefix(prefix);
   },
-  /** Taille totale + nombre d'objets sous un préfixe (scan complet). */
-  prefixStats(prefix: string): Promise<{ totalBytes: number; objectCount: number }> {
-    return S3UploaderNative.prefixStats(prefix);
+  /**
+   * Taille totale + nombre d'objets sous un préfixe (scan complet).
+   * `allVersions` : inclut les anciennes versions (≈ taille facturée B2).
+   */
+  prefixStats(
+    prefix: string,
+    allVersions = false,
+  ): Promise<{ totalBytes: number; objectCount: number }> {
+    return S3UploaderNative.prefixStats(prefix, allVersions);
   },
   /** Liste les versions B2 (S3 `?versions`). `recursive` = sans delimiter. */
   listObjectVersions(

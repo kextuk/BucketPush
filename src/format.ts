@@ -1,13 +1,23 @@
 /** Formatage tailles / débit / ETA. Pur, testé (voir __tests__/format.test.ts). */
 
-const UNITS = ['o', 'Ko', 'Mo', 'Go', 'To', 'Po'];
+const UNITS = ['o', 'ko', 'Mo', 'Go', 'To', 'Po'];
 
+/**
+ * Base **1000** (comme la console Backblaze), pas 1024 — pour que les tailles
+ * affichées correspondent à celles du bucket.
+ */
 export function formatBytes(bytes: number, decimals = 1): string {
   if (!isFinite(bytes) || bytes <= 0) return '0 o';
-  const i = Math.min(UNITS.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
-  const value = bytes / Math.pow(1024, i);
+  const i = Math.min(UNITS.length - 1, Math.floor(Math.log10(bytes) / 3));
+  const value = bytes / Math.pow(1000, i);
   const d = i === 0 ? 0 : decimals;
   return `${value.toFixed(d)} ${UNITS[i]}`;
+}
+
+/** `4.83 Go (4 831 838 208 o)` — valeur exacte entre parenthèses. */
+export function formatBytesExact(bytes: number): string {
+  const n = Math.max(0, Math.round(bytes));
+  return `${formatBytes(n)} (${n.toLocaleString('fr-FR')} o)`;
 }
 
 export function formatSpeed(bytesPerSec: number): string {

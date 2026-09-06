@@ -328,12 +328,17 @@ class S3UploaderModule(private val reactContext: ReactApplicationContext) :
         }
     }
 
-    /** Taille totale et nombre d'objets sous un préfixe. Résout `{ totalBytes, objectCount }`. */
+    /**
+     * Taille totale et nombre d'objets sous un préfixe. Résout `{ totalBytes, objectCount }`.
+     * `allVersions=true` : compte aussi les anciennes versions (≈ taille facturée B2).
+     */
     @ReactMethod
-    fun prefixStats(prefix: String, promise: Promise) {
+    fun prefixStats(prefix: String, allVersions: Boolean, promise: Promise) {
         withS3(promise) { s3, _ ->
-            val (bytes, count) = s3.prefixTotals(prefix) { b, c ->
-                UploadEvents.scanProgress(b, c)
+            val (bytes, count) = if (allVersions) {
+                s3.versionTotals(prefix) { b, c -> UploadEvents.scanProgress(b, c) }
+            } else {
+                s3.prefixTotals(prefix) { b, c -> UploadEvents.scanProgress(b, c) }
             }
             promise.resolve(
                 Arguments.createMap().apply {

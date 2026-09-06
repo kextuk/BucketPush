@@ -201,6 +201,33 @@ class S3Client(
         return bytes to count
     }
 
+    /**
+     * Totaux en comptant **toutes les versions** (courantes + anciennes), delete markers
+     * exclus (taille 0). C'est ce qui correspond à la taille facturée / affichée par B2.
+     */
+    suspend fun versionTotals(
+        prefix: String,
+        onPage: ((Long, Long) -> Unit)? = null,
+    ): Pair<Long, Long> {
+        var bytes = 0L
+        var count = 0L
+        var km: String? = null
+        var vm: String? = null
+        do {
+            val res = listObjectVersions(prefix, km, vm, delimiter = "")
+            res.versions.forEach {
+                if (!it.isDeleteMarker) {
+                    bytes += it.size
+                    count++
+                }
+            }
+            km = res.nextKeyMarker
+            vm = res.nextVersionIdMarker
+            onPage?.invoke(bytes, count)
+        } while (km != null || vm != null)
+        return bytes to count
+    }
+
     /** Toutes les clés sous un préfixe (sans delimiter), paginé. Retry sur 503. */
     suspend fun listAllKeys(prefix: String): List<String> {
         val keys = ArrayList<String>()

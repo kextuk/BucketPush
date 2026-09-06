@@ -1,12 +1,14 @@
 import { SpeedMeter, formatBytes, formatEta, formatSpeed, percent } from '../src/format';
 
-describe('formatBytes', () => {
+describe('formatBytes (base 1000)', () => {
   it('octets sans décimale', () => {
     expect(formatBytes(512)).toBe('512 o');
+    expect(formatBytes(999)).toBe('999 o');
   });
-  it('Mo / Go', () => {
-    expect(formatBytes(5 * 1024 * 1024)).toBe('5.0 Mo');
-    expect(formatBytes(3.5 * 1024 * 1024 * 1024)).toBe('3.5 Go');
+  it('ko / Mo / Go décimaux', () => {
+    expect(formatBytes(1000)).toBe('1.0 ko');
+    expect(formatBytes(5_000_000)).toBe('5.0 Mo');
+    expect(formatBytes(3_500_000_000)).toBe('3.5 Go');
   });
   it('zéro / négatif', () => {
     expect(formatBytes(0)).toBe('0 o');
@@ -23,7 +25,7 @@ describe('formatEta', () => {
 });
 
 describe('formatSpeed', () => {
-  it('affiche un débit', () => expect(formatSpeed(1024 * 1024)).toBe('1.0 Mo/s'));
+  it('affiche un débit', () => expect(formatSpeed(1_000_000)).toBe('1.0 Mo/s'));
   it('nul', () => expect(formatSpeed(0)).toBe('—'));
 });
 
