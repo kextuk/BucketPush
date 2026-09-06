@@ -497,6 +497,19 @@ class S3UploaderModule(private val reactContext: ReactApplicationContext) :
         }
     }
 
+    /** Toutes les clés courantes sous un préfixe. Résout `{ keys: [String] }`. */
+    @ReactMethod
+    fun listKeys(prefix: String, promise: Promise) {
+        withS3(promise) { s3, _ ->
+            val keys = s3.listAllKeys(prefix)
+            promise.resolve(
+                Arguments.createMap().apply {
+                    putArray("keys", Arguments.createArray().apply { keys.forEach { pushString(it) } })
+                },
+            )
+        }
+    }
+
     /** Supprime tout ce qui est sous un préfixe. Résout `{ deleted }`. */
     @ReactMethod
     fun deletePrefix(prefix: String, promise: Promise) {

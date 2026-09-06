@@ -140,6 +140,10 @@ export const S3Uploader = {
   deletePrefix(prefix: string): Promise<{ deleted: number }> {
     return S3UploaderNative.deletePrefix(prefix);
   },
+  /** Toutes les clés courantes sous un préfixe. */
+  listKeys(prefix: string): Promise<{ keys: string[] }> {
+    return S3UploaderNative.listKeys(prefix);
+  },
   /**
    * Taille totale + nombre d'objets sous un préfixe (scan complet).
    * `allVersions` : inclut les anciennes versions (≈ taille facturée B2).

@@ -74,8 +74,12 @@ export function BrowserScreen({ navigation }: Props) {
     ghost: boolean;
   } | null>(null);
   const [prompt, setPrompt] = useState<
-    { kind: 'newFolder' } | { kind: 'rename'; key: string } | null
+    | { kind: 'newFolder' }
+    | { kind: 'rename'; key: string }
+    | { kind: 'renameFolder'; prefix: string }
+    | null
   >(null);
+  const [moveFolder, setMoveFolder] = useState<{ prefix: string; name: string } | null>(null);
 
   const { summary, hydrate: hydrateQueue } = useUploader();
 
@@ -223,12 +227,16 @@ export function BrowserScreen({ navigation }: Props) {
       );
     }
     if (mode === 'move') {
-      r = r.filter(
-        x => x.kind === 'folder' || (x.kind === 'file' && selected.includes(x.key)),
-      );
+      r = r.filter(x => {
+        if (x.kind === 'folder') {
+          // en déplacement de dossier : masquer le dossier déplacé et son sous-arbre
+          return !moveFolder || !x.prefix.startsWith(moveFolder.prefix);
+        }
+        return !moveFolder && selected.includes(x.key);
+      });
     }
     return r;
-  }, [rows, filter, mode, selected]);
+  }, [rows, filter, mode, selected, moveFolder]);
 
   // --- Sélection --------------------------------------------------------------
 
@@ -246,10 +254,18 @@ export function BrowserScreen({ navigation }: Props) {
   const exitMode = () => {
     setMode('browse');
     setSelected([]);
+    setMoveFolder(null);
   };
   const startMove = () => {
     setFilter('');
     setShowFilter(false);
+    setMode('move');
+  };
+  const startFolderMove = (fp: string, name: string) => {
+    setFilter('');
+    setShowFilter(false);
+    setFolderMenu(null);
+    setMoveFolder({ prefix: fp, name });
     setMode('move');
   };
   const toggle = (key: string) =>
@@ -316,7 +332,43 @@ export function BrowserScreen({ navigation }: Props) {
     }
   };
 
+  const moveFolderKeys = async (oldPrefix: string, newPrefix: string) => {
+    setOp({ label: 'Déplacement', done: 0, total: 0, pct: 0 });
+    try {
+      const { keys } = await S3Uploader.listKeys(oldPrefix);
+      if (!keys.length) {
+        Alert.alert('Dossier vide', 'Rien à déplacer.');
+        return;
+      }
+      const pairs = keys.map(k => ({ src: k, dst: newPrefix + k.slice(oldPrefix.length) }));
+      const res = await S3Uploader.moveObjects(pairs);
+      if (res.failed) {
+        Alert.alert('Terminé', `${res.moved} ok · ${res.failed} en échec`);
+      }
+    } catch (e: any) {
+      Alert.alert('Échec', String(e?.message ?? e));
+    } finally {
+      setOp(null);
+      setMoveFolder(null);
+      exitMode();
+      reload();
+    }
+  };
+
   const pasteHere = () => {
+    if (moveFolder) {
+      const dst = prefix + moveFolder.name + '/';
+      if (dst === moveFolder.prefix) {
+        Alert.alert('Même emplacement', 'Le dossier est déjà là.');
+        return;
+      }
+      if (prefix.startsWith(moveFolder.prefix)) {
+        Alert.alert('Destination invalide', 'On ne peut pas déplacer un dossier dans lui-même.');
+        return;
+      }
+      moveFolderKeys(moveFolder.prefix, dst);
+      return;
+    }
     if (selected.some(k => prefixOf(k) === prefix)) {
       Alert.alert('Destination invalide', 'Certains fichiers sont déjà dans ce dossier.');
       return;
@@ -429,6 +481,9 @@ export function BrowserScreen({ navigation }: Props) {
       runBatch('Création', ['x'], async () => {
         await S3Uploader.createFolder(prefix, name);
       });
+    } else if (p.kind === 'renameFolder') {
+      const parent = p.prefix.replace(/[^/]+\/$/, '');
+      moveFolderKeys(p.prefix, parent + name + '/');
     } else {
       runMove([{ src: p.key, dst: joinKey(prefixOf(p.key), name) }]);
     }
@@ -699,7 +754,9 @@ export function BrowserScreen({ navigation }: Props) {
           ) : (
             <>
               <Text style={styles.abTitle} numberOfLines={1}>
-                Déplacer {selected.length} → /{prefix}
+                {moveFolder
+                  ? `Déplacer « ${moveFolder.name} » → /${prefix}`
+                  : `Déplacer ${selected.length} → /${prefix}`}
               </Text>
               <Pressable onPress={pasteHere} hitSlop={8}>
                 <Text style={styles.abPaste}>Coller ici</Text>
@@ -892,6 +949,15 @@ export function BrowserScreen({ navigation }: Props) {
         options={
           folderMenu
             ? [
+                {
+                  label: 'Renommer',
+                  onPress: () =>
+                    setPrompt({ kind: 'renameFolder', prefix: folderMenu.prefix }),
+                },
+                {
+                  label: 'Déplacer',
+                  onPress: () => startFolderMove(folderMenu.prefix, folderMenu.name),
+                },
                 ...(folderMenu.ghost
                   ? [
                       {
@@ -917,9 +983,19 @@ export function BrowserScreen({ navigation }: Props) {
 
       <PromptModal
         visible={prompt != null}
-        title={prompt?.kind === 'rename' ? 'Renommer' : 'Nouveau dossier'}
-        initial={prompt?.kind === 'rename' ? baseName(prompt.key) : ''}
-        placeholder={prompt?.kind === 'rename' ? 'Nouveau nom' : 'Nom du dossier'}
+        title={
+          prompt?.kind === 'rename' || prompt?.kind === 'renameFolder'
+            ? 'Renommer'
+            : 'Nouveau dossier'
+        }
+        initial={
+          prompt?.kind === 'rename'
+            ? baseName(prompt.key)
+            : prompt?.kind === 'renameFolder'
+              ? prompt.prefix.slice(prompt.prefix.replace(/[^/]+\/$/, '').length).replace(/\/$/, '')
+              : ''
+        }
+        placeholder={prompt?.kind === 'newFolder' ? 'Nom du dossier' : 'Nouveau nom'}
         onCancel={() => setPrompt(null)}
         onSubmit={submitPrompt}
       />
