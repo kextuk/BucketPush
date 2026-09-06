@@ -36,6 +36,14 @@ class S3Client(
 
     data class UploadedPart(val partNumber: Int, val eTag: String)
 
+    data class S3Object(val key: String, val size: Long, val lastModified: String?)
+
+    data class ListResult(
+        val prefixes: List<String>,
+        val objects: List<S3Object>,
+        val nextToken: String?,
+    )
+
     // --- Opérations ---------------------------------------------------------
 
     /** Test de connectivité / credentials : HEAD sur le bucket. */
@@ -44,6 +52,45 @@ class S3Client(
         execute(build("HEAD", url, config.canonicalBucketPath(), emptyMap(),
             SigV4Signer.EMPTY_SHA256, null)).use { r ->
             if (!r.isSuccessful) throw parseError(r, "HEAD bucket a échoué")
+        }
+    }
+
+    /**
+     * @return la taille de l'objet s'il existe, `null` s'il n'existe pas (404 / 403 /
+     *   NoSuchKey). Lève sur les autres erreurs (réseau…) → l'appelant décide.
+     */
+    fun headObject(key: String): Long? {
+        val url = config.objectUrl(key)
+        execute(build("HEAD", url, config.canonicalPath(key), emptyMap(),
+            SigV4Signer.EMPTY_SHA256, null)).use { r ->
+            if (r.code == 404 || r.code == 403) return null
+            if (!r.isSuccessful) throw parseError(r, "HEAD object a échoué")
+            return r.header("Content-Length")?.toLongOrNull() ?: -1L
+        }
+    }
+
+    fun listObjectsV2(prefix: String, continuationToken: String?, maxKeys: Int = 500): ListResult {
+        val query = buildMap {
+            put("list-type", "2")
+            put("delimiter", "/")
+            put("max-keys", maxKeys.toString())
+            if (prefix.isNotEmpty()) put("prefix", prefix)
+            if (continuationToken != null) put("continuation-token", continuationToken)
+        }
+        val url = withQuery(config.bucketUrl(), query)
+        execute(build("GET", url, config.canonicalBucketPath(), query,
+            SigV4Signer.EMPTY_SHA256, null)).use { r ->
+            val body = r.body?.string().orEmpty()
+            if (!r.isSuccessful) throw parseError(r, body, "ListObjectsV2 a échoué")
+            return parseListObjects(body)
+        }
+    }
+
+    fun deleteObject(key: String) {
+        val url = config.objectUrl(key)
+        execute(build("DELETE", url, config.canonicalPath(key), emptyMap(),
+            SigV4Signer.EMPTY_SHA256, null)).use { r ->
+            if (!r.isSuccessful && r.code != 404) throw parseError(r, "DeleteObject a échoué")
         }
     }
 
@@ -249,6 +296,62 @@ class S3Client(
             event = parser.next()
         }
         return ListPartsResult(parts, truncated, nextMarker)
+    }
+
+    private fun parseListObjects(xml: String): ListResult {
+        val prefixes = ArrayList<String>()
+        val objects = ArrayList<S3Object>()
+        var nextToken: String? = null
+        var truncated = false
+
+        var inContents = false
+        var inCommonPrefixes = false
+        var curKey: String? = null
+        var curSize = 0L
+        var curModified: String? = null
+        var curPrefix: String? = null
+
+        val parser = Xml.newPullParser()
+        parser.setInput(StringReader(xml))
+        var event = parser.eventType
+        var tag: String? = null
+        while (event != XmlPullParser.END_DOCUMENT) {
+            when (event) {
+                XmlPullParser.START_TAG -> {
+                    tag = parser.name
+                    when (tag) {
+                        "Contents" -> { inContents = true; curKey = null; curSize = 0L; curModified = null }
+                        "CommonPrefixes" -> { inCommonPrefixes = true; curPrefix = null }
+                    }
+                }
+                XmlPullParser.TEXT -> {
+                    val text = parser.text?.trim().orEmpty()
+                    if (text.isNotEmpty()) when (tag) {
+                        "Key" -> if (inContents) curKey = text
+                        "Size" -> if (inContents) curSize = text.toLongOrNull() ?: 0L
+                        "LastModified" -> if (inContents) curModified = text
+                        "Prefix" -> if (inCommonPrefixes) curPrefix = text
+                        "IsTruncated" -> truncated = text.equals("true", ignoreCase = true)
+                        "NextContinuationToken" -> nextToken = text
+                    }
+                }
+                XmlPullParser.END_TAG -> {
+                    when (parser.name) {
+                        "Contents" -> {
+                            curKey?.let { objects.add(S3Object(it, curSize, curModified)) }
+                            inContents = false
+                        }
+                        "CommonPrefixes" -> {
+                            curPrefix?.let { prefixes.add(it) }
+                            inCommonPrefixes = false
+                        }
+                    }
+                    tag = null
+                }
+            }
+            event = parser.next()
+        }
+        return ListResult(prefixes, objects, if (truncated) nextToken else null)
     }
 
     private fun extractTag(xml: String, tag: String): String? {

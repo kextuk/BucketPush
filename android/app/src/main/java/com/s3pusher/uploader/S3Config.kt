@@ -18,6 +18,7 @@ data class S3Config(
     val maxConcurrentParts: Int = 2,
     val maxConcurrentFiles: Int = 1,
     val wifiOnly: Boolean = false,
+    val skipExisting: Boolean = true,
 ) {
     val endpointUrl: HttpUrl =
         requireNotNull(endpoint.trim().trimEnd('/').toHttpUrlOrNull()) {
@@ -80,6 +81,7 @@ data class S3Config(
             maxConcurrentParts = (m["maxConcurrentParts"] as? Number)?.toInt() ?: 2,
             maxConcurrentFiles = (m["maxConcurrentFiles"] as? Number)?.toInt() ?: 1,
             wifiOnly = (m["wifiOnly"] as? Boolean) ?: false,
+            skipExisting = (m["skipExisting"] as? Boolean) ?: true,
         )
     }
 }

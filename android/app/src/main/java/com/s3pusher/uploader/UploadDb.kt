@@ -13,6 +13,7 @@ object Status {
     const val FAILED = "failed"
     const val CANCELED = "canceled"
     const val PAUSED = "paused"
+    const val SKIPPED = "skipped" // déjà présent sur le serveur / déjà dans la file
 }
 
 data class ItemRow(
@@ -120,6 +121,9 @@ class UploadDb private constructor(context: Context) :
 
     fun getItem(id: String): ItemRow? =
         query("SELECT * FROM upload_item WHERE id = ?", arrayOf(id)).firstOrNull()
+
+    fun itemByKey(key: String): ItemRow? =
+        query("SELECT * FROM upload_item WHERE s3key = ? LIMIT 1", arrayOf(key)).firstOrNull()
 
     fun setStatus(id: String, status: String, error: String? = null) {
         writableDatabase.execSQL(

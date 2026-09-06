@@ -32,9 +32,14 @@ export function QueueScreen({ navigation }: Props) {
     navigation.setOptions({
       // eslint-disable-next-line react/no-unstable-nested-components
       headerRight: () => (
-        <Pressable onPress={() => navigation.navigate('Settings')} hitSlop={12}>
-          <Text style={styles.headerBtn}>Config</Text>
-        </Pressable>
+        <View style={styles.headerBtns}>
+          <Pressable onPress={() => navigation.navigate('Browser')} hitSlop={12}>
+            <Text style={styles.headerBtn}>Parcourir</Text>
+          </Pressable>
+          <Pressable onPress={() => navigation.navigate('Settings')} hitSlop={12}>
+            <Text style={styles.headerBtn}>Config</Text>
+          </Pressable>
+        </View>
       ),
     });
   }, [navigation]);
@@ -83,8 +88,19 @@ export function QueueScreen({ navigation }: Props) {
         contentType: f.type ?? undefined,
       }));
 
-      await S3Uploader.enqueue(payload);
+      const res = await S3Uploader.enqueue(payload);
       hydrate();
+      const skipped = res.skippedExisting + res.skippedInQueue;
+      if (skipped > 0) {
+        const parts: string[] = [];
+        if (res.skippedExisting) parts.push(`${res.skippedExisting} déjà en ligne`);
+        if (res.skippedInQueue) parts.push(`${res.skippedInQueue} déjà dans la file`);
+        Alert.alert(
+          'Fichiers ignorés',
+          `${skipped} fichier(s) non ajouté(s) : ${parts.join(', ')}.` +
+            (res.queued ? `\n${res.queued} ajouté(s) à la file.` : ''),
+        );
+      }
     } catch (e: any) {
       if (e?.code === 'OPERATION_CANCELED') return;
       Alert.alert('Erreur', String(e?.message ?? e));
@@ -106,6 +122,13 @@ export function QueueScreen({ navigation }: Props) {
       }
       if (item.status === 'failed' || item.status === 'canceled') {
         actions.push({ text: 'Réessayer', onPress: () => retry(item.id) });
+      }
+      if (item.status === 'skipped') {
+        actions.push({
+          text: "Forcer l'upload (écrase)",
+          style: 'destructive',
+          onPress: () => retry(item.id),
+        });
       }
       actions.push({ text: 'Fermer', style: 'cancel' });
       Alert.alert(item.displayName, item.error ?? item.key, actions);
@@ -216,12 +239,15 @@ function labelForItem(s: string) {
       return 'annulé';
     case 'paused':
       return 'pause';
+    case 'skipped':
+      return 'déjà en ligne';
     default:
       return s;
   }
 }
 function badgeStyle(s: string) {
   if (s === 'completed') return { backgroundColor: '#1b5e20', color: '#fff' };
+  if (s === 'skipped') return { backgroundColor: '#37474f', color: '#fff' };
   if (s === 'failed') return { backgroundColor: '#b71c1c', color: '#fff' };
   if (s === 'uploading') return { backgroundColor: '#0d47a1', color: '#fff' };
   if (s === 'canceled') return { backgroundColor: '#555', color: '#fff' };
@@ -230,7 +256,8 @@ function badgeStyle(s: string) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  headerBtn: { color: '#0a84ff', fontSize: 16, fontWeight: '600' },
+  headerBtns: { flexDirection: 'row', gap: 16 },
+  headerBtn: { color: '#0a84ff', fontSize: 15, fontWeight: '600' },
   banner: { backgroundColor: '#8a6d00', padding: 12 },
   bannerText: { color: '#fff', fontSize: 13 },
   toolbar: {

@@ -14,6 +14,7 @@ export type AppConfig = {
   keyPrefix: string;
   timestampKeys: boolean;
   wifiOnly: boolean;
+  skipExisting: boolean;
   partSizeMiB?: number;
   maxConcurrentParts?: number;
   maxConcurrentFiles?: number;
@@ -28,6 +29,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   keyPrefix: '',
   timestampKeys: false,
   wifiOnly: false,
+  skipExisting: true,
   partSizeMiB: undefined,
   maxConcurrentParts: 2,
   maxConcurrentFiles: 1,
@@ -98,6 +100,7 @@ export async function toNativeConfig(cfg: AppConfig): Promise<S3Config | null> {
     maxConcurrentParts: cfg.maxConcurrentParts ?? 2,
     maxConcurrentFiles: cfg.maxConcurrentFiles ?? 1,
     wifiOnly: cfg.wifiOnly,
+    skipExisting: cfg.skipExisting,
   };
 }
 

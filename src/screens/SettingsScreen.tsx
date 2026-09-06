@@ -180,6 +180,12 @@ export function SettingsScreen({ navigation }: Props) {
           <Switch value={cfg.wifiOnly} onValueChange={v => set('wifiOnly', v)} />
         </Row>
 
+        <Row
+          label="Ne pas ré-uploader si déjà sur le serveur"
+          hint="HEAD avant chaque upload ; l'objet existant n'est jamais touché">
+          <Switch value={cfg.skipExisting} onValueChange={v => set('skipExisting', v)} />
+        </Row>
+
         <Row label="Horodater les clés (anti-écrasement)">
           <Switch
             value={cfg.timestampKeys}

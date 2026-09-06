@@ -10,12 +10,14 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { QueueScreen } from './src/screens/QueueScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
+import { BrowserScreen } from './src/screens/BrowserScreen';
 import { loadConfig, toNativeConfig } from './src/config';
 import { S3Uploader } from './src/native/S3Uploader';
 
 export type RootStackParamList = {
   Queue: undefined;
   Settings: undefined;
+  Browser: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -58,6 +60,11 @@ function App(): React.JSX.Element {
             name="Settings"
             component={SettingsScreen}
             options={{ title: 'Configuration' }}
+          />
+          <Stack.Screen
+            name="Browser"
+            component={BrowserScreen}
+            options={{ title: 'Parcourir le bucket' }}
           />
         </Stack.Navigator>
       </NavigationContainer>

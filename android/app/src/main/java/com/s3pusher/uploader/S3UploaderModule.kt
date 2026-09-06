@@ -70,45 +70,165 @@ class S3UploaderModule(private val reactContext: ReactApplicationContext) :
         }
     }
 
+    /**
+     * Ajoute des fichiers à la file. Avant chaque ajout :
+     *  - dédup locale : si la clé est déjà dans la file (quel que soit le statut) → ignoré ;
+     *  - dédup serveur : si `skipExisting` et un objet existe déjà à cette clé (HEAD) →
+     *    marqué `skipped`, jamais ré-uploadé.
+     * Résout avec `{ queued, skippedInQueue, skippedExisting }`.
+     */
     @ReactMethod
     fun enqueue(items: ReadableArray, promise: Promise) {
+        val config = CredentialStore(reactContext).load()
+        // snapshot des entrées JS (l'objet ReadableArray n'est pas sûr hors du thread JS)
+        data class Candidate(
+            val id: String,
+            val uri: String,
+            val key: String,
+            val name: String,
+            val sizeHint: Long,
+            val contentType: String?,
+        )
+        val candidates = ArrayList<Candidate>()
         try {
-            val now = System.currentTimeMillis()
-            val rows = ArrayList<ItemRow>()
+            val seenUris = HashSet<String>()
             for (i in 0 until items.size()) {
                 val m = items.getMap(i) ?: continue
                 val uriStr = m.getString("uri") ?: continue
                 val key = m.getString("key") ?: continue
-                val name = m.getString("displayName") ?: key.substringAfterLast('/')
-                var size = if (m.hasKey("sizeBytes")) m.getDouble("sizeBytes").toLong() else -1L
-                if (size <= 0L) size = querySize(Uri.parse(uriStr))
-                val contentType = m.getString("contentType")
-                takePersistablePermission(Uri.parse(uriStr))
-                rows.add(
-                    ItemRow(
+                if (!seenUris.add(uriStr)) continue // même fichier deux fois dans le lot
+                candidates.add(
+                    Candidate(
                         id = m.getString("id") ?: UUID.randomUUID().toString(),
                         uri = uriStr,
                         key = key,
-                        displayName = name,
-                        sizeBytes = size,
-                        uploadId = null,
-                        status = Status.QUEUED,
-                        error = null,
-                        uploadedBytes = 0L,
-                        contentType = contentType,
-                        createdAt = now,
-                        updatedAt = now,
+                        name = m.getString("displayName") ?: key.substringAfterLast('/'),
+                        sizeHint = if (m.hasKey("sizeBytes")) {
+                            m.getDouble("sizeBytes").toLong()
+                        } else {
+                            -1L
+                        },
+                        contentType = m.getString("contentType"),
                     ),
                 )
             }
-            db.insertItems(rows)
-            rows.forEach { UploadEvents.itemStatus(it.id, Status.QUEUED, null) }
-            UploadController.resume()
-            val wifiOnly = CredentialStore(reactContext).load()?.wifiOnly ?: false
-            UploadQueueWorker.enqueue(reactContext, wifiOnly)
-            promise.resolve(null)
         } catch (e: Exception) {
             promise.reject("enqueue_failed", e.message, e)
+            return
+        }
+
+        scope.launch {
+            try {
+                val s3 = config?.let { S3Client(it) }
+                val skipExisting = config?.skipExisting ?: false
+                val now = System.currentTimeMillis()
+                var queued = 0
+                var skippedInQueue = 0
+                var skippedExisting = 0
+
+                for (c in candidates) {
+                    if (db.itemByKey(c.key) != null) {
+                        skippedInQueue++
+                        continue
+                    }
+                    var size = c.sizeHint
+                    if (size <= 0L) size = querySize(Uri.parse(c.uri))
+
+                    var status = Status.QUEUED
+                    var note: String? = null
+                    if (skipExisting && s3 != null) {
+                        val remoteSize = try {
+                            s3.headObject(c.key)
+                        } catch (_: Exception) {
+                            null // erreur réseau → on n'ignore pas, on tente l'upload
+                        }
+                        if (remoteSize != null) {
+                            status = Status.SKIPPED
+                            note = "Déjà présent sur le serveur"
+                            skippedExisting++
+                        }
+                    }
+                    if (status == Status.QUEUED) queued++
+
+                    takePersistablePermission(Uri.parse(c.uri))
+                    db.insertItems(
+                        listOf(
+                            ItemRow(
+                                id = c.id, uri = c.uri, key = c.key, displayName = c.name,
+                                sizeBytes = size, uploadId = null, status = status, error = note,
+                                uploadedBytes = if (status == Status.SKIPPED) size else 0L,
+                                contentType = c.contentType, createdAt = now, updatedAt = now,
+                            ),
+                        ),
+                    )
+                    UploadEvents.itemStatus(c.id, status, note)
+                }
+
+                if (queued > 0) {
+                    UploadController.resume()
+                    UploadQueueWorker.enqueue(reactContext, config?.wifiOnly ?: false)
+                }
+                promise.resolve(
+                    Arguments.createMap().apply {
+                        putInt("queued", queued)
+                        putInt("skippedInQueue", skippedInQueue)
+                        putInt("skippedExisting", skippedExisting)
+                    },
+                )
+            } catch (e: Exception) {
+                promise.reject("enqueue_failed", e.message, e)
+            }
+        }
+    }
+
+    @ReactMethod
+    fun listObjects(prefix: String, continuationToken: String?, promise: Promise) {
+        val config = CredentialStore(reactContext).load()
+        if (config == null) {
+            promise.reject("no_config", "Aucune configuration enregistrée")
+            return
+        }
+        scope.launch {
+            try {
+                val res = S3Client(config).listObjectsV2(prefix, continuationToken)
+                val prefixes = Arguments.createArray().apply { res.prefixes.forEach { pushString(it) } }
+                val objects = Arguments.createArray()
+                for (o in res.objects) {
+                    objects.pushMap(
+                        Arguments.createMap().apply {
+                            putString("key", o.key)
+                            putDouble("size", o.size.toDouble())
+                            o.lastModified?.let { putString("lastModified", it) }
+                        },
+                    )
+                }
+                promise.resolve(
+                    Arguments.createMap().apply {
+                        putArray("prefixes", prefixes)
+                        putArray("objects", objects)
+                        res.nextToken?.let { putString("nextToken", it) }
+                    },
+                )
+            } catch (e: Exception) {
+                promise.reject("list_failed", e.message, e)
+            }
+        }
+    }
+
+    @ReactMethod
+    fun deleteObject(key: String, promise: Promise) {
+        val config = CredentialStore(reactContext).load()
+        if (config == null) {
+            promise.reject("no_config", "Aucune configuration enregistrée")
+            return
+        }
+        scope.launch {
+            try {
+                S3Client(config).deleteObject(key)
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.reject("delete_failed", e.message, e)
+            }
         }
     }
 

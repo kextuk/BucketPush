@@ -28,6 +28,20 @@ export type S3Config = {
   maxConcurrentParts?: number;
   maxConcurrentFiles?: number;
   wifiOnly?: boolean;
+  skipExisting?: boolean;
+};
+
+export type EnqueueResult = {
+  queued: number;
+  skippedInQueue: number;
+  skippedExisting: number;
+};
+
+export type S3ListEntry = { key: string; size: number; lastModified?: string };
+export type S3ListResult = {
+  prefixes: string[];
+  objects: S3ListEntry[];
+  nextToken?: string;
 };
 
 export type UploadItemInput = {
@@ -45,7 +59,8 @@ export type ItemStatus =
   | 'completed'
   | 'failed'
   | 'canceled'
-  | 'paused';
+  | 'paused'
+  | 'skipped';
 
 export type QueueStatus = 'idle' | 'running' | 'paused';
 
@@ -78,8 +93,14 @@ export const S3Uploader = {
   testConnection(): Promise<{ ok: boolean; error?: string }> {
     return S3UploaderNative.testConnection();
   },
-  enqueue(items: UploadItemInput[]): Promise<void> {
+  enqueue(items: UploadItemInput[]): Promise<EnqueueResult> {
     return S3UploaderNative.enqueue(items);
+  },
+  listObjects(prefix: string, continuationToken?: string): Promise<S3ListResult> {
+    return S3UploaderNative.listObjects(prefix, continuationToken ?? null);
+  },
+  deleteObject(key: string): Promise<void> {
+    return S3UploaderNative.deleteObject(key);
   },
   pause(): Promise<void> {
     return S3UploaderNative.pause();
