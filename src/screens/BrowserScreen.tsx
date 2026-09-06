@@ -3,13 +3,11 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -21,6 +19,7 @@ import { S3Uploader, type S3ListEntry } from '../native/S3Uploader';
 import { useUploader } from '../useUploader';
 import { addFilesTo, addFolderTo, joinKey, summarizeEnqueue } from '../upload';
 import { sanitizeSegment } from '../keys';
+import { ActionSheet, PromptModal } from '../components/Sheets';
 import { formatBytes, formatSpeed } from '../format';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Browser'>;
@@ -205,6 +204,7 @@ export function BrowserScreen({ navigation }: Props) {
           onPress: () => runBatch('Suppression', selected, k => S3Uploader.deleteObject(k)),
         },
       ],
+      { cancelable: true },
     );
   };
 
@@ -274,7 +274,7 @@ export function BrowserScreen({ navigation }: Props) {
           }
         },
       },
-    ]);
+    ], { cancelable: true });
   };
 
   // --- Rendu -------------------------------------------------------------
@@ -301,6 +301,7 @@ export function BrowserScreen({ navigation }: Props) {
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
+            style={styles.crumbScroll}
             contentContainerStyle={styles.crumbs}>
             <Crumb label="Bucket" onPress={() => setPrefix('')} active={!segments.length} />
             {segments.map((seg, i) => (
@@ -314,7 +315,13 @@ export function BrowserScreen({ navigation }: Props) {
               </React.Fragment>
             ))}
           </ScrollView>
-          <Pressable onPress={cycleSort(sortMode, setSortMode)} hitSlop={8}>
+          <Pressable
+            onPress={() => setPrompt({ kind: 'newFolder' })}
+            hitSlop={8}
+            style={styles.topAction}>
+            <Text style={styles.topActionText}>＋dossier</Text>
+          </Pressable>
+          <Pressable onPress={cycleSort(sortMode, setSortMode)} hitSlop={8} style={styles.topAction}>
             <Text style={styles.sortBtn}>{sortLabel(sortMode)}</Text>
           </Pressable>
         </View>
@@ -472,7 +479,6 @@ export function BrowserScreen({ navigation }: Props) {
         options={[
           { label: 'Fichiers…', onPress: addFiles },
           { label: 'Dossier Android…', onPress: addFolder },
-          { label: 'Nouveau dossier…', onPress: () => setPrompt({ kind: 'newFolder' }) },
         ]}
         onClose={() => setSheet(false)}
       />
@@ -498,89 +504,6 @@ function Crumb({ label, onPress, active }: { label: string; onPress: () => void;
         {label}
       </Text>
     </Pressable>
-  );
-}
-
-function ActionSheet({
-  visible,
-  title,
-  options,
-  onClose,
-}: {
-  visible: boolean;
-  title?: string;
-  options: { label: string; onPress: () => void; destructive?: boolean }[];
-  onClose: () => void;
-}) {
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={sh.backdrop} onPress={onClose}>
-        <View style={sh.card}>
-          {title ? <Text style={sh.title}>{title}</Text> : null}
-          {options.map((o, i) => (
-            <Pressable
-              key={i}
-              style={sh.opt}
-              onPress={() => {
-                onClose();
-                o.onPress();
-              }}>
-              <Text style={[sh.optText, o.destructive && sh.destructive]}>{o.label}</Text>
-            </Pressable>
-          ))}
-          <Pressable style={sh.opt} onPress={onClose}>
-            <Text style={[sh.optText, sh.cancel]}>Annuler</Text>
-          </Pressable>
-        </View>
-      </Pressable>
-    </Modal>
-  );
-}
-
-function PromptModal({
-  visible,
-  title,
-  initial,
-  placeholder,
-  onCancel,
-  onSubmit,
-}: {
-  visible: boolean;
-  title: string;
-  initial: string;
-  placeholder: string;
-  onCancel: () => void;
-  onSubmit: (v: string) => void;
-}) {
-  const [v, setV] = useState(initial);
-  useEffect(() => {
-    if (visible) setV(initial);
-  }, [visible, initial]);
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-      <Pressable style={sh.backdrop} onPress={onCancel}>
-        <Pressable style={sh.promptCard} onPress={() => {}}>
-          <Text style={sh.title}>{title}</Text>
-          <TextInput
-            style={sh.input}
-            value={v}
-            onChangeText={setV}
-            placeholder={placeholder}
-            placeholderTextColor="#888"
-            autoFocus
-            autoCapitalize="none"
-          />
-          <View style={sh.promptActions}>
-            <Pressable onPress={onCancel} hitSlop={8}>
-              <Text style={sh.cancelBtn}>Annuler</Text>
-            </Pressable>
-            <Pressable onPress={() => onSubmit(v.trim())} disabled={!v.trim()} hitSlop={8}>
-              <Text style={[sh.okBtn, !v.trim() && sh.okDisabled]}>OK</Text>
-            </Pressable>
-          </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
   );
 }
 
@@ -623,6 +546,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#8886',
   },
+  crumbScroll: { flex: 1 },
+  topAction: { paddingLeft: 12 },
+  topActionText: { fontSize: 12, color: '#0a84ff', fontWeight: '600' },
   crumbs: { alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, gap: 6 },
   moveCrumbs: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#8886' },
   crumb: { fontSize: 13, color: '#0a84ff', maxWidth: 160 },
@@ -726,34 +652,3 @@ const styles = StyleSheet.create({
   fabText: { color: '#fff', fontSize: 28, fontWeight: '700', marginTop: -2 },
 });
 
-const sh = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: '#0009', justifyContent: 'flex-end' },
-  card: {
-    backgroundColor: '#1c1c1e',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    paddingVertical: 8,
-    paddingBottom: 24,
-  },
-  title: { color: '#fff', fontSize: 14, fontWeight: '700', padding: 16, opacity: 0.8 },
-  opt: { paddingVertical: 15, paddingHorizontal: 20 },
-  optText: { color: '#0a84ff', fontSize: 16, fontWeight: '600' },
-  destructive: { color: '#ff5a5a' },
-  cancel: { color: '#8e8e93' },
-
-  promptCard: { margin: 24, backgroundColor: '#1c1c1e', borderRadius: 14, padding: 20 },
-  input: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#888',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 15,
-    color: '#fff',
-    marginTop: 12,
-  },
-  promptActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 24, marginTop: 16 },
-  cancelBtn: { color: '#8e8e93', fontSize: 15 },
-  okBtn: { color: '#0a84ff', fontSize: 15, fontWeight: '700' },
-  okDisabled: { opacity: 0.4 },
-});

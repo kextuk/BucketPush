@@ -14,6 +14,7 @@ import {
   type Profile,
 } from '../config';
 import { S3Uploader } from '../native/S3Uploader';
+import { ActionSheet } from '../components/Sheets';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Profiles'>;
 
@@ -22,6 +23,7 @@ const PENDING = new Set(['queued', 'uploading', 'paused']);
 export function ProfilesScreen({ navigation }: Props) {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [menuProfile, setMenuProfile] = useState<Profile | null>(null);
 
   const load = useCallback(async () => {
     const { activeId: a, profiles: p } = await listProfiles();
@@ -69,6 +71,7 @@ export function ProfilesScreen({ navigation }: Props) {
             { text: 'Rester', style: 'cancel' },
             { text: 'Changer', style: 'destructive', onPress: go },
           ],
+          { cancelable: true },
         );
       } else {
         go();
@@ -82,52 +85,54 @@ export function ProfilesScreen({ navigation }: Props) {
     navigation.navigate('Settings', { profileId: p.id });
   }, [navigation]);
 
-  const onMore = useCallback(
+  const confirmDelete = useCallback(
     (p: Profile) => {
-      Alert.alert(p.name || 'Profil', p.endpoint || '(non configuré)', [
+      Alert.alert(
+        'Supprimer ce profil ?',
+        `« ${p.name} » et ses clés S3 seront effacés.`,
+        [
+          { text: 'Annuler', style: 'cancel' },
+          {
+            text: 'Supprimer',
+            style: 'destructive',
+            onPress: async () => {
+              if (p.id === activeId) {
+                const pending = await pendingUploads();
+                await Promise.all(pending.map(i => S3Uploader.cancel(i.id).catch(() => {})));
+              }
+              await deleteProfile(p.id);
+              await applyNativeConfig();
+              load();
+            },
+          },
+        ],
+        { cancelable: true },
+      );
+    },
+    [activeId, load, pendingUploads],
+  );
+
+  const menuOptions = menuProfile
+    ? [
         {
-          text: 'Modifier',
-          onPress: () => navigation.navigate('Settings', { profileId: p.id }),
+          label: 'Modifier',
+          onPress: () =>
+            navigation.navigate('Settings', { profileId: menuProfile.id }),
         },
         {
-          text: 'Dupliquer',
+          label: 'Dupliquer',
           onPress: async () => {
-            await duplicateProfile(p.id);
+            await duplicateProfile(menuProfile.id);
             load();
           },
         },
         {
-          text: 'Supprimer',
-          style: 'destructive',
-          onPress: () =>
-            Alert.alert(
-              'Supprimer ce profil ?',
-              `« ${p.name} » et ses clés S3 seront effacés.`,
-              [
-                { text: 'Annuler', style: 'cancel' },
-                {
-                  text: 'Supprimer',
-                  style: 'destructive',
-                  onPress: async () => {
-                    if (p.id === activeId) {
-                      const pending = await pendingUploads();
-                      await Promise.all(
-                        pending.map(i => S3Uploader.cancel(i.id).catch(() => {})),
-                      );
-                    }
-                    await deleteProfile(p.id);
-                    await applyNativeConfig();
-                    load();
-                  },
-                },
-              ],
-            ),
+          label: 'Supprimer',
+          destructive: true,
+          onPress: () => confirmDelete(menuProfile),
         },
-        { text: 'Fermer', style: 'cancel' },
-      ]);
-    },
-    [activeId, load, navigation, pendingUploads],
-  );
+      ]
+    : [];
 
   return (
     <View style={styles.container}>
@@ -146,7 +151,7 @@ export function ProfilesScreen({ navigation }: Props) {
             <Pressable
               style={[styles.row, active && styles.rowActive]}
               onPress={() => activate(item.id)}
-              onLongPress={() => onMore(item)}>
+              onLongPress={() => setMenuProfile(item)}>
               <View style={styles.rowMain}>
                 <Text style={styles.name}>
                   {active ? '● ' : '○ '}
@@ -160,7 +165,7 @@ export function ProfilesScreen({ navigation }: Props) {
                   <Text style={styles.warn}>clés S3 manquantes</Text>
                 ) : null}
               </View>
-              <Pressable hitSlop={12} onPress={() => onMore(item)}>
+              <Pressable hitSlop={12} onPress={() => setMenuProfile(item)}>
                 <Text style={styles.more}>⋯</Text>
               </Pressable>
             </Pressable>
@@ -170,6 +175,13 @@ export function ProfilesScreen({ navigation }: Props) {
       <Pressable style={styles.fab} onPress={addProfile}>
         <Text style={styles.fabText}>+ Nouveau profil</Text>
       </Pressable>
+
+      <ActionSheet
+        visible={menuProfile != null}
+        title={menuProfile?.name || 'Profil'}
+        options={menuOptions}
+        onClose={() => setMenuProfile(null)}
+      />
     </View>
   );
 }

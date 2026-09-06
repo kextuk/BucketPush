@@ -68,7 +68,7 @@ export function QueueScreen({ navigation }: Props) {
         });
       }
       actions.push({ text: 'Fermer', style: 'cancel' });
-      Alert.alert(item.displayName, item.error ?? item.key, actions);
+      Alert.alert(item.displayName, item.error ?? item.key, actions, { cancelable: true });
     },
     [cancel, retry],
   );
