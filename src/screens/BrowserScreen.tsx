@@ -15,7 +15,11 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import type { RootStackParamList } from '../../App';
 import { applyNativeConfig } from '../../App';
-import { S3Uploader, type S3ListEntry } from '../native/S3Uploader';
+import {
+  S3Uploader,
+  type ObjectVersion,
+  type S3ListEntry,
+} from '../native/S3Uploader';
 import { useUploader } from '../useUploader';
 import { addFilesTo, addFolderTo, joinKey, summarizeEnqueue } from '../upload';
 import { sanitizeSegment } from '../keys';
@@ -26,9 +30,11 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Browser'>;
 
 type Folder = { kind: 'folder'; prefix: string; name: string };
 type FileRow = { kind: 'file'; entry: S3ListEntry; name: string };
-type Row = Folder | FileRow;
+type VersionRow = { kind: 'version'; v: ObjectVersion; name: string };
+type Row = Folder | FileRow | VersionRow;
 type Mode = 'browse' | 'select' | 'move';
 type SortMode = 'name' | 'size' | 'recent';
+type Cursor = { token?: string; km?: string; vm?: string };
 
 const prefixOf = (key: string) => key.slice(0, key.lastIndexOf('/') + 1);
 const baseName = (key: string) => key.slice(key.lastIndexOf('/') + 1);
@@ -38,7 +44,10 @@ export function BrowserScreen({ navigation }: Props) {
   const [prefix, setPrefix] = useState('');
   const [folders, setFolders] = useState<Folder[]>([]);
   const [files, setFiles] = useState<FileRow[]>([]);
+  const [versionRows, setVersionRows] = useState<VersionRow[]>([]);
+  const [showVersions, setShowVersions] = useState(false);
   const [nextToken, setNextToken] = useState<string | undefined>();
+  const [nextVer, setNextVer] = useState<{ km?: string; vm?: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [configured, setConfigured] = useState(true);
@@ -69,33 +78,64 @@ export function BrowserScreen({ navigation }: Props) {
     });
   }, [navigation]);
 
-  const load = useCallback(async (p: string, token?: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await S3Uploader.listObjects(p, token);
-      const markerFolders = res.objects
-        .filter(o => o.key.endsWith('/') && o.key !== p)
-        .map(o => o.key);
-      const fs: Folder[] = uniq([...res.prefixes, ...markerFolders])
-        .map(cp => ({ kind: 'folder' as const, prefix: cp, name: cp.slice(p.length).replace(/\/$/, '') }))
-        .sort((a, b) => a.name.localeCompare(b.name));
-      const os: FileRow[] = res.objects
-        .filter(o => !o.key.endsWith('/'))
-        .map(o => ({ kind: 'file' as const, entry: o, name: o.key.slice(p.length) }));
-      setFolders(prev => (token ? [...prev, ...fs] : fs));
-      setFiles(prev => (token ? [...prev, ...os] : os));
-      setNextToken(res.nextToken);
-    } catch (e: any) {
-      setError(String(e?.message ?? e));
-      if (!token) {
-        setFolders([]);
-        setFiles([]);
+  const load = useCallback(
+    async (p: string, cursor?: Cursor) => {
+      setLoading(true);
+      setError(null);
+      const more = cursor != null;
+      const toFolders = (prefixes: string[], markers: string[]): Folder[] =>
+        uniq([...prefixes, ...markers])
+          .map(cp => ({
+            kind: 'folder' as const,
+            prefix: cp,
+            name: cp.slice(p.length).replace(/\/$/, ''),
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+      try {
+        if (showVersions) {
+          const res = await S3Uploader.listObjectVersions(p, cursor?.km, cursor?.vm);
+          const markers = res.versions
+            .filter(v => v.key.endsWith('/') && v.key !== p)
+            .map(v => v.key);
+          const fs = toFolders(res.prefixes, markers);
+          const vr: VersionRow[] = res.versions
+            .filter(v => !v.key.endsWith('/'))
+            .map(v => ({ kind: 'version' as const, v, name: v.key.slice(p.length) }));
+          setFolders(prev => (more ? [...prev, ...fs] : fs));
+          setVersionRows(prev => (more ? [...prev, ...vr] : vr));
+          setNextVer(
+            res.nextKeyMarker || res.nextVersionIdMarker
+              ? { km: res.nextKeyMarker, vm: res.nextVersionIdMarker }
+              : null,
+          );
+          setNextToken(undefined);
+        } else {
+          const res = await S3Uploader.listObjects(p, cursor?.token);
+          const markers = res.objects
+            .filter(o => o.key.endsWith('/') && o.key !== p)
+            .map(o => o.key);
+          const fs = toFolders(res.prefixes, markers);
+          const os: FileRow[] = res.objects
+            .filter(o => !o.key.endsWith('/'))
+            .map(o => ({ kind: 'file' as const, entry: o, name: o.key.slice(p.length) }));
+          setFolders(prev => (more ? [...prev, ...fs] : fs));
+          setFiles(prev => (more ? [...prev, ...os] : os));
+          setNextToken(res.nextToken);
+          setNextVer(null);
+        }
+      } catch (e: any) {
+        setError(String(e?.message ?? e));
+        if (!more) {
+          setFolders([]);
+          setFiles([]);
+          setVersionRows([]);
+        }
+      } finally {
+        setLoading(false);
       }
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    },
+    [showVersions],
+  );
 
   useEffect(() => {
     load(prefix);
@@ -137,13 +177,36 @@ export function BrowserScreen({ navigation }: Props) {
     return arr;
   }, [files, sortMode]);
 
-  const rows: Row[] = useMemo(() => [...folders, ...sortedFiles], [folders, sortedFiles]);
+  const sortedVersions = useMemo(() => {
+    const arr = [...versionRows];
+    if (sortMode === 'size') arr.sort((a, b) => b.v.size - a.v.size);
+    else if (sortMode === 'recent') {
+      arr.sort(
+        (a, b) =>
+          (Date.parse(b.v.lastModified ?? '') || 0) -
+          (Date.parse(a.v.lastModified ?? '') || 0),
+      );
+    } else {
+      arr.sort(
+        (a, b) =>
+          a.name.localeCompare(b.name) ||
+          (Date.parse(b.v.lastModified ?? '') || 0) -
+            (Date.parse(a.v.lastModified ?? '') || 0),
+      );
+    }
+    return arr;
+  }, [versionRows, sortMode]);
+
+  const rows: Row[] = useMemo(
+    () => (showVersions ? [...folders, ...sortedVersions] : [...folders, ...sortedFiles]),
+    [showVersions, folders, sortedFiles, sortedVersions],
+  );
 
   // en mode déplacement : on n'affiche que les dossiers (destinations) + les fichiers déplacés
   const displayRows = useMemo(
     () =>
       mode === 'move'
-        ? rows.filter(r => r.kind === 'folder' || selected.includes(r.entry.key))
+        ? rows.filter(r => r.kind === 'folder' || (r.kind === 'file' && selected.includes(r.entry.key)))
         : rows,
     [rows, mode, selected],
   );
@@ -311,6 +374,34 @@ export function BrowserScreen({ navigation }: Props) {
     );
   };
 
+  const deleteVersionRow = (v: ObjectVersion) => {
+    Alert.alert(
+      v.isDeleteMarker ? 'Supprimer ce marqueur ?' : 'Supprimer cette version ?',
+      `${v.key}\n${v.isDeleteMarker ? 'marqueur de suppression' : formatBytes(v.size)} · ${shortDate(
+        v.lastModified,
+      )}`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Supprimer',
+          style: 'destructive',
+          onPress: async () => {
+            setOp({ label: 'Suppression', done: 0, total: 0 });
+            try {
+              await S3Uploader.deleteVersion(v.key, v.versionId);
+              reload();
+            } catch (e: any) {
+              Alert.alert('Échec', String(e?.message ?? e));
+            } finally {
+              setOp(null);
+            }
+          },
+        },
+      ],
+      { cancelable: true },
+    );
+  };
+
   const purgeVersions = (scopePrefix: string, label: string) => {
     Alert.alert(
       'Purger les anciennes versions ?',
@@ -376,11 +467,24 @@ export function BrowserScreen({ navigation }: Props) {
               </React.Fragment>
             ))}
           </ScrollView>
+          {!showVersions ? (
+            <Pressable
+              onPress={() => setPrompt({ kind: 'newFolder' })}
+              hitSlop={8}
+              style={styles.topAction}>
+              <Text style={styles.topActionText}>＋dossier</Text>
+            </Pressable>
+          ) : null}
           <Pressable
-            onPress={() => setPrompt({ kind: 'newFolder' })}
+            onPress={() => {
+              setShowVersions(v => !v);
+              exitMode();
+            }}
             hitSlop={8}
             style={styles.topAction}>
-            <Text style={styles.topActionText}>＋dossier</Text>
+            <Text style={[styles.topActionText, showVersions && styles.topActionOn]}>
+              {showVersions ? '← fichiers' : 'versions'}
+            </Text>
           </Pressable>
           <Pressable onPress={cycleSort(sortMode, setSortMode)} hitSlop={8} style={styles.topAction}>
             <Text style={styles.sortBtn}>{sortLabel(sortMode)}</Text>
@@ -482,7 +586,13 @@ export function BrowserScreen({ navigation }: Props) {
 
       <FlatList
         data={displayRows}
-        keyExtractor={r => (r.kind === 'folder' ? `f:${r.prefix}` : `o:${r.entry.key}`)}
+        keyExtractor={r =>
+          r.kind === 'folder'
+            ? `f:${r.prefix}`
+            : r.kind === 'version'
+              ? `v:${r.v.key}:${r.v.versionId}`
+              : `o:${r.entry.key}`
+        }
         contentContainerStyle={rows.length ? styles.listPad : styles.emptyWrap}
         refreshControl={
           <RefreshControl refreshing={loading && rows.length === 0} onRefresh={reload} />
@@ -501,6 +611,29 @@ export function BrowserScreen({ navigation }: Props) {
                 {item.name}
               </Text>
               <Text style={styles.chevron}>›</Text>
+            </Pressable>
+          ) : item.kind === 'version' ? (
+            <Pressable
+              style={[styles.row, !item.v.isLatest && styles.rowGhost]}
+              onLongPress={() => deleteVersionRow(item.v)}>
+              <Text style={styles.fileIcon}>{item.v.isDeleteMarker ? '🗑' : '·'}</Text>
+              <View style={styles.rowMain}>
+                <Text style={styles.rowName} numberOfLines={1}>
+                  {item.name || baseName(item.v.key)}
+                </Text>
+                <Text style={styles.rowMeta}>
+                  {item.v.isDeleteMarker ? 'marqueur de suppression' : formatBytes(item.v.size)}
+                  {item.v.lastModified ? ` · ${shortDate(item.v.lastModified)}` : ''}
+                </Text>
+              </View>
+              <Text
+                style={[
+                  styles.verTag,
+                  item.v.isLatest && !item.v.isDeleteMarker && styles.verTagCurrent,
+                  item.v.isDeleteMarker && styles.verTagDeleted,
+                ]}>
+                {item.v.isDeleteMarker ? 'supprimé' : item.v.isLatest ? 'actuelle' : 'ancienne'}
+              </Text>
             </Pressable>
           ) : (
             <Pressable
@@ -526,11 +659,23 @@ export function BrowserScreen({ navigation }: Props) {
             </Pressable>
           )
         }
+        ListHeaderComponent={
+          showVersions ? (
+            <Text style={styles.verHint}>
+              Toutes les versions (anciennes et supprimées). Appui long = supprimer
+              définitivement.
+            </Text>
+          ) : undefined
+        }
         ListFooterComponent={
           <View style={styles.footer}>
             {loading && rows.length > 0 ? <ActivityIndicator /> : null}
-            {nextToken && !loading ? (
-              <Pressable style={styles.moreBtn} onPress={() => load(prefix, nextToken)}>
+            {!loading && (showVersions ? nextVer != null : nextToken != null) ? (
+              <Pressable
+                style={styles.moreBtn}
+                onPress={() =>
+                  load(prefix, showVersions ? { km: nextVer?.km, vm: nextVer?.vm } : { token: nextToken })
+                }>
                 <Text style={styles.moreText}>Charger plus</Text>
               </Pressable>
             ) : null}
@@ -632,7 +777,8 @@ function Crumb({ label, onPress, active }: { label: string; onPress: () => void;
 
 // --- Helpers -------------------------------------------------------------
 
-function shortDate(iso: string): string {
+function shortDate(iso?: string): string {
+  if (!iso) return '';
   const d = new Date(iso);
   return isNaN(d.getTime()) ? '' : d.toLocaleDateString();
 }
@@ -672,6 +818,7 @@ const styles = StyleSheet.create({
   crumbScroll: { flex: 1 },
   topAction: { paddingLeft: 12 },
   topActionText: { fontSize: 12, color: '#0a84ff', fontWeight: '600' },
+  topActionOn: { color: '#fff', backgroundColor: '#0a84ff', paddingHorizontal: 6, borderRadius: 4 },
   crumbs: { alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, gap: 6 },
   moveCrumbs: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#8886' },
   crumb: { fontSize: 13, color: '#0a84ff', maxWidth: 160 },
@@ -721,6 +868,20 @@ const styles = StyleSheet.create({
     borderBottomColor: '#8884',
   },
   rowMoving: { backgroundColor: 'rgba(27,94,32,0.12)' },
+  rowGhost: { opacity: 0.5 },
+  verHint: { fontSize: 11, opacity: 0.55, paddingHorizontal: 16, paddingVertical: 10 },
+  verTag: {
+    fontSize: 11,
+    opacity: 0.6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#888',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    overflow: 'hidden',
+  },
+  verTagCurrent: { color: '#fff', backgroundColor: '#1b5e20', borderColor: '#1b5e20', opacity: 1 },
+  verTagDeleted: { color: '#fff', backgroundColor: '#b71c1c', borderColor: '#b71c1c', opacity: 1 },
   rowMain: { flex: 1 },
   rowName: { flex: 1, fontSize: 15 },
   rowMeta: { fontSize: 12, opacity: 0.55, marginTop: 3 },
