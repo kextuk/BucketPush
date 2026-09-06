@@ -156,6 +156,27 @@ class S3Client(
         }
     }
 
+    /** Télécharge un objet en streaming vers `out` (mémoire constante). */
+    fun downloadTo(key: String, out: java.io.OutputStream, onBytes: ((Long) -> Unit)?) {
+        val url = config.objectUrl(key)
+        execute(build("GET", url, config.canonicalPath(key), emptyMap(),
+            SigV4Signer.EMPTY_SHA256, null)).use { r ->
+            if (!r.isSuccessful) throw parseError(r, "GetObject a échoué")
+            val body = r.body ?: throw IOException("Réponse vide pour $key")
+            body.byteStream().use { input ->
+                val buf = ByteArray(64 * 1024)
+                var total = 0L
+                while (true) {
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    out.write(buf, 0, n)
+                    total += n
+                    onBytes?.invoke(total)
+                }
+            }
+        }
+    }
+
     /** Objet vide (marqueur de « dossier » : clé se terminant par '/'). */
     fun putEmptyObject(key: String) {
         val url = config.objectUrl(key)

@@ -140,16 +140,6 @@ export function SettingsScreen({ navigation, route }: Props) {
           />
         </Field>
 
-        <Field label="Region" hint="ex. fr-par, us-east-1">
-          <TextInput
-            style={styles.input}
-            autoCapitalize="none"
-            autoCorrect={false}
-            value={cfg.region}
-            onChangeText={t => set('region', t)}
-          />
-        </Field>
-
         <Field label="Bucket">
           <TextInput
             style={styles.input}
@@ -216,6 +206,17 @@ export function SettingsScreen({ navigation, route }: Props) {
         </Row>
 
         <Text style={styles.section}>Avancé</Text>
+
+        <Field label="Region (SigV4)" hint="vide = dérivée de l'endpoint (ex. us-west-004)">
+          <TextInput
+            style={styles.input}
+            autoCapitalize="none"
+            autoCorrect={false}
+            placeholder="auto"
+            value={cfg.region ?? ''}
+            onChangeText={t => set('region', t)}
+          />
+        </Field>
 
         <Field label="Taille de part (MiB)" hint="vide = adaptatif (32 MiB, agrandi si besoin)">
           <TextInput

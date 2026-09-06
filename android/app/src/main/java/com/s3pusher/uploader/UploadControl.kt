@@ -43,6 +43,13 @@ object UploadEvents {
             currentName: String,
         )
         fun onScanProgress(bytes: Long, count: Long)
+        fun onDownloadProgress(
+            filesDone: Int,
+            filesTotal: Int,
+            bytesDone: Long,
+            bytesTotal: Long,
+            currentName: String,
+        )
     }
 
     private val listeners = CopyOnWriteArrayList<Listener>()
@@ -66,4 +73,9 @@ object UploadEvents {
 
     fun scanProgress(bytes: Long, count: Long) =
         listeners.forEach { runCatching { it.onScanProgress(bytes, count) } }
+
+    fun downloadProgress(done: Int, total: Int, bytes: Long, bytesTotal: Long, name: String) =
+        listeners.forEach {
+            runCatching { it.onDownloadProgress(done, total, bytes, bytesTotal, name) }
+        }
 }

@@ -1,5 +1,11 @@
 import { pick, pickDirectory, types } from '@react-native-documents/picker';
-import { S3Uploader, type EnqueueResult, type UploadItemInput } from './native/S3Uploader';
+import {
+  S3Uploader,
+  type DownloadItem,
+  type DownloadResult,
+  type EnqueueResult,
+  type UploadItemInput,
+} from './native/S3Uploader';
 import { dedupeKeys, normalizePrefix, sanitizeSegment } from './keys';
 
 /** Assemble une clé S3 : `<prefixe>/<reste>` (prefixe éventuellement vide). */
@@ -82,6 +88,13 @@ export async function addFolderTo(
     contentType: f.mimeType,
   }));
   return S3Uploader.enqueue(payload);
+}
+
+/** Choisit un dossier Android et y télécharge les objets donnés. */
+export async function downloadTo(items: DownloadItem[]): Promise<DownloadResult | null> {
+  if (!items.length) return null;
+  const dir = await pickDirectory({ requestLongTermAccess: true });
+  return S3Uploader.downloadObjects(items, dir.uri);
 }
 
 export function summarizeEnqueue(res: EnqueueResult): string | null {

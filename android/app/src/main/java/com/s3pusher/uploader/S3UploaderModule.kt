@@ -497,6 +497,80 @@ class S3UploaderModule(private val reactContext: ReactApplicationContext) :
         }
     }
 
+    /**
+     * Télécharge des objets vers un dossier Android (tree URI de pickDirectory).
+     * `items` = `[{ key, size }]`. Streaming, mémoire constante. Émet
+     * `S3Uploader:onDownloadProgress`. Résout `{ downloaded, failed, errors: [String] }`.
+     */
+    @ReactMethod
+    fun downloadObjects(items: ReadableArray, treeUri: String, promise: Promise) {
+        data class Item(val key: String, val size: Long)
+        val list = ArrayList<Item>()
+        for (i in 0 until items.size()) {
+            val m = items.getMap(i) ?: continue
+            val key = m.getString("key") ?: continue
+            val size = if (m.hasKey("size")) m.getDouble("size").toLong() else 0L
+            list.add(Item(key, size))
+        }
+        withS3(promise) { s3, _ ->
+            val root = Uri.parse(treeUri)
+            runCatching {
+                reactContext.contentResolver.takePersistableUriPermission(
+                    root, Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                )
+            }
+            val dirUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(
+                root, android.provider.DocumentsContract.getTreeDocumentId(root),
+            )
+            val cr = reactContext.contentResolver
+            val bytesTotal = list.sumOf { it.size }.coerceAtLeast(1L)
+            val filesDone = java.util.concurrent.atomic.AtomicInteger(0)
+            val bytesDone = java.util.concurrent.atomic.AtomicLong(0)
+            val errors = java.util.Collections.synchronizedList(ArrayList<String>())
+
+            for (it in list) {
+                val name = it.key.substringAfterLast('/').ifEmpty { "fichier" }
+                try {
+                    val ext = name.substringAfterLast('.', "")
+                    val mime = if (ext.isNotEmpty()) {
+                        android.webkit.MimeTypeMap.getSingleton()
+                            .getMimeTypeFromExtension(ext.lowercase())
+                    } else {
+                        null
+                    } ?: "application/octet-stream"
+                    val fileUri = android.provider.DocumentsContract.createDocument(
+                        cr, dirUri, mime, name,
+                    ) ?: throw java.io.IOException("Création du fichier impossible : $name")
+                    cr.openOutputStream(fileUri)?.use { out ->
+                        s3.downloadTo(it.key, out) { written ->
+                            UploadEvents.downloadProgress(
+                                filesDone.get(), list.size,
+                                bytesDone.get() + written, bytesTotal, name,
+                            )
+                        }
+                    } ?: throw java.io.IOException("Flux de sortie null : $name")
+                    bytesDone.addAndGet(it.size)
+                } catch (e: Exception) {
+                    errors.add("$name : ${e.message ?: e}")
+                }
+                filesDone.incrementAndGet()
+                UploadEvents.downloadProgress(
+                    filesDone.get(), list.size, bytesDone.get(), bytesTotal, name,
+                )
+            }
+            promise.resolve(
+                Arguments.createMap().apply {
+                    putInt("downloaded", list.size - errors.size)
+                    putInt("failed", errors.size)
+                    putArray("errors", Arguments.createArray().apply {
+                        errors.forEach { pushString(it) }
+                    })
+                },
+            )
+        }
+    }
+
     /** Toutes les clés courantes sous un préfixe. Résout `{ keys: [String] }`. */
     @ReactMethod
     fun listKeys(prefix: String, promise: Promise) {
@@ -769,6 +843,22 @@ class S3UploaderModule(private val reactContext: ReactApplicationContext) :
         emit("S3Uploader:onScanProgress", Arguments.createMap().apply {
             putDouble("bytes", bytes.toDouble())
             putDouble("count", count.toDouble())
+        })
+    }
+
+    override fun onDownloadProgress(
+        filesDone: Int,
+        filesTotal: Int,
+        bytesDone: Long,
+        bytesTotal: Long,
+        currentName: String,
+    ) {
+        emit("S3Uploader:onDownloadProgress", Arguments.createMap().apply {
+            putInt("filesDone", filesDone)
+            putInt("filesTotal", filesTotal)
+            putDouble("bytesDone", bytesDone.toDouble())
+            putDouble("bytesTotal", bytesTotal.toDouble())
+            putString("currentName", currentName)
         })
     }
 

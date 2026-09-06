@@ -3,6 +3,7 @@ import type { S3Config } from './native/S3Uploader';
 import {
   PROFILE_DEFAULTS,
   blankProfile,
+  deriveRegion,
   duplicateMeta,
   pickMeta,
   removeProfile,
@@ -13,7 +14,7 @@ import {
 } from './profiles';
 
 export type { ProfileMeta, ProfileStore } from './profiles';
-export { PROFILE_DEFAULTS, validateProfile } from './profiles';
+export { PROFILE_DEFAULTS, deriveRegion, validateProfile } from './profiles';
 
 /** Un profil enrichi de l'info « des clés sont stockées ». */
 export type Profile = ProfileMeta & { hasCredentials: boolean };
@@ -215,7 +216,7 @@ export async function toNativeConfig(cfg: Profile): Promise<S3Config | null> {
   if (!creds) return null;
   return {
     endpoint: cfg.endpoint.trim(),
-    region: cfg.region.trim(),
+    region: deriveRegion(cfg.endpoint, cfg.region),
     bucket: cfg.bucket.trim(),
     accessKeyId: creds.accessKeyId,
     secretAccessKey: creds.secretAccessKey,

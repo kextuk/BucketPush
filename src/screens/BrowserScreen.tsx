@@ -18,7 +18,7 @@ import type { RootStackParamList } from '../../App';
 import { applyNativeConfig } from '../../App';
 import { S3Uploader, type ObjectVersion } from '../native/S3Uploader';
 import { useUploader } from '../useUploader';
-import { addFilesTo, addFolderTo, joinKey, summarizeEnqueue } from '../upload';
+import { addFilesTo, addFolderTo, downloadTo, joinKey, summarizeEnqueue } from '../upload';
 import { sanitizeSegment } from '../keys';
 import { ActionSheet, PromptModal, type SheetOption } from '../components/Sheets';
 import { formatBytes, formatBytesExact, formatSpeed } from '../format';
@@ -126,12 +126,24 @@ export function BrowserScreen({ navigation }: Props) {
   }, [prefix, load]);
 
   useEffect(() => {
-    const sub = S3Uploader.onMoveProgress(e => {
+    const m = S3Uploader.onMoveProgress(e => {
       if (e.filesTotal <= 0) return;
       const pct = e.bytesTotal > 0 ? Math.round((e.bytesCopied / e.bytesTotal) * 100) : 0;
       setOp({ label: 'Déplacement', done: e.filesDone, total: e.filesTotal, pct });
     });
-    return () => sub.remove();
+    const d = S3Uploader.onDownloadProgress(e => {
+      const pct = e.bytesTotal > 0 ? Math.round((e.bytesDone / e.bytesTotal) * 100) : 0;
+      setOp({
+        label: `Téléchargement · ${e.currentName}`,
+        done: e.filesDone,
+        total: e.filesTotal,
+        pct,
+      });
+    });
+    return () => {
+      m.remove();
+      d.remove();
+    };
   }, []);
 
   useFocusEffect(
@@ -420,6 +432,30 @@ export function BrowserScreen({ navigation }: Props) {
     );
   };
 
+  const downloadSelected = async () => {
+    const items = fileRows
+      .filter(f => selected.includes(f.key) && !f.ghost)
+      .map(f => ({ key: f.key, size: f.size }));
+    if (!items.length) return;
+    setOp({ label: 'Téléchargement', done: 0, total: items.length, pct: 0 });
+    try {
+      const res = await downloadTo(items);
+      if (res) {
+        Alert.alert(
+          res.failed ? 'Terminé avec des erreurs' : 'Téléchargé',
+          res.failed
+            ? `${res.downloaded} ok · ${res.failed} en échec\n` + res.errors.slice(0, 6).join('\n')
+            : `${res.downloaded} fichier(s) enregistré(s).`,
+        );
+      }
+    } catch (e: any) {
+      if (e?.code !== 'OPERATION_CANCELED') Alert.alert('Échec', String(e?.message ?? e));
+    } finally {
+      setOp(null);
+      exitMode();
+    }
+  };
+
   const restoreSelected = async () => {
     const keys = selMeta.ghostKeys;
     if (!keys.length) return;
@@ -647,6 +683,18 @@ export function BrowserScreen({ navigation }: Props) {
   );
 
   const selMenuOptions: SheetOption[] = [];
+  if (selected.length === 1 && selMeta.allLive) {
+    selMenuOptions.push({
+      label: 'Renommer',
+      onPress: () => setPrompt({ kind: 'rename', key: selected[0] }),
+    });
+  }
+  if (selMeta.liveKeys.length) {
+    selMenuOptions.push({
+      label: `Télécharger (${selMeta.liveKeys.length})`,
+      onPress: downloadSelected,
+    });
+  }
   if (selected.length === 1) {
     selMenuOptions.push({
       label: 'Voir les versions',
@@ -727,13 +775,12 @@ export function BrowserScreen({ navigation }: Props) {
                   <Pressable onPress={startMove} hitSlop={8}>
                     <Text style={styles.abAction}>Déplacer</Text>
                   </Pressable>
-                  {selected.length === 1 ? (
-                    <Pressable
-                      onPress={() => setPrompt({ kind: 'rename', key: selected[0] })}
-                      hitSlop={8}>
-                      <Text style={styles.abAction}>Renommer</Text>
-                    </Pressable>
-                  ) : null}
+                  <Pressable onPress={downloadSelected} hitSlop={8}>
+                    <Text style={styles.abAction}>Téléch.</Text>
+                  </Pressable>
+                  <Pressable onPress={() => setSelMenu(true)} hitSlop={8}>
+                    <Text style={styles.abAction}>⋯</Text>
+                  </Pressable>
                   <Pressable onPress={softDeleteSelected} hitSlop={8}>
                     <Text style={[styles.abAction, styles.abDanger]}>Suppr.</Text>
                   </Pressable>
@@ -745,6 +792,9 @@ export function BrowserScreen({ navigation }: Props) {
                       <Text style={styles.abAction}>Restaurer</Text>
                     </Pressable>
                   ) : null}
+                  <Pressable onPress={() => setSelMenu(true)} hitSlop={8}>
+                    <Text style={styles.abAction}>⋯</Text>
+                  </Pressable>
                   <Pressable onPress={purgeSelected} hitSlop={8}>
                     <Text style={[styles.abAction, styles.abDanger]}>Suppr. déf.</Text>
                   </Pressable>

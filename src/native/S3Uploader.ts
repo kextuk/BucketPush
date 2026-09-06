@@ -111,6 +111,16 @@ export type ProgressEvent = {
 export type ItemStatusEvent = { id: string; status: ItemStatus; error?: string };
 export type QueueStatusEvent = { status: QueueStatus; activeCount: number };
 
+export type DownloadItem = { key: string; size: number };
+export type DownloadResult = { downloaded: number; failed: number; errors: string[] };
+export type DownloadProgressEvent = {
+  filesDone: number;
+  filesTotal: number;
+  bytesDone: number;
+  bytesTotal: number;
+  currentName: string;
+};
+
 export type MovePair = { src: string; dst: string };
 export type MoveResult = { moved: number; failed: number; errors: string[] };
 export type MoveProgressEvent = {
@@ -143,6 +153,16 @@ export const S3Uploader = {
   /** Toutes les clés courantes sous un préfixe. */
   listKeys(prefix: string): Promise<{ keys: string[] }> {
     return S3UploaderNative.listKeys(prefix);
+  },
+  /** Télécharge des objets vers un dossier Android (tree URI). */
+  downloadObjects(items: DownloadItem[], treeUri: string): Promise<DownloadResult> {
+    return S3UploaderNative.downloadObjects(items, treeUri);
+  },
+  onDownloadProgress(cb: (e: DownloadProgressEvent) => void) {
+    return emitter.addListener(
+      'S3Uploader:onDownloadProgress',
+      cb as (...a: unknown[]) => void,
+    );
   },
   /**
    * Taille totale + nombre d'objets sous un préfixe (scan complet).

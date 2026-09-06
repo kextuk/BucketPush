@@ -7,7 +7,7 @@ export type ProfileMeta = {
   id: string;
   name: string;
   endpoint: string;
-  region: string;
+  region?: string; // vide = auto-dérivée de l'endpoint
   bucket: string;
   forcePathStyle: boolean;
   keyPrefix: string;
@@ -27,7 +27,6 @@ export type ProfileStore = {
 
 export const PROFILE_DEFAULTS: Omit<ProfileMeta, 'id' | 'name'> = {
   endpoint: '',
-  region: '',
   bucket: '',
   forcePathStyle: true,
   keyPrefix: '',
@@ -114,13 +113,27 @@ export function duplicateMeta(src: ProfileMeta, existingNames: string[]): Profil
   };
 }
 
+/**
+ * Région SigV4 : override du profil s'il est renseigné, sinon dérivée du host.
+ * `s3.<region>.<provider>.<tld>` → `<region>` (B2 `us-west-004`, Scaleway `fr-par`,
+ * AWS régional…). Sinon `us-east-1` (AWS global, MinIO qui ignore la région).
+ */
+export function deriveRegion(endpoint: string, override?: string): string {
+  if (override && override.trim()) return override.trim();
+  let host = endpoint.trim().replace(/^https?:\/\//, '');
+  host = host.split('/')[0].split(':')[0];
+  const parts = host.split('.');
+  if (parts[0] === 's3' && parts.length >= 4) return parts[1];
+  if (parts.length >= 5 && parts[1] === 's3') return parts[2]; // <bucket>.s3.<region>.…
+  return 'us-east-1';
+}
+
 export function validateProfile(p: ProfileMeta): string[] {
   const errors: string[] = [];
   if (!p.name.trim()) errors.push('Nom de profil requis.');
   if (!/^https?:\/\/.+/.test(p.endpoint.trim())) {
     errors.push('Endpoint invalide (doit commencer par http:// ou https://).');
   }
-  if (!p.region.trim()) errors.push('Region requise.');
   if (!p.bucket.trim()) errors.push('Bucket requis.');
   else if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(p.bucket.trim())) {
     errors.push('Nom de bucket invalide.');

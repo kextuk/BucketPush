@@ -1,5 +1,6 @@
 import {
   blankProfile,
+  deriveRegion,
   duplicateMeta,
   nextActiveId,
   pickMeta,
@@ -81,6 +82,21 @@ describe('pickMeta', () => {
   it('null -> {}', () => {
     expect(pickMeta(null)).toEqual({});
   });
+});
+
+describe('deriveRegion', () => {
+  it('Backblaze B2', () =>
+    expect(deriveRegion('https://s3.us-west-004.backblazeb2.com')).toBe('us-west-004'));
+  it('Scaleway', () =>
+    expect(deriveRegion('https://s3.fr-par.scw.cloud')).toBe('fr-par'));
+  it('AWS régional', () =>
+    expect(deriveRegion('https://s3.eu-west-1.amazonaws.com')).toBe('eu-west-1'));
+  it('AWS global -> us-east-1', () =>
+    expect(deriveRegion('https://s3.amazonaws.com')).toBe('us-east-1'));
+  it('MinIO custom -> us-east-1', () =>
+    expect(deriveRegion('http://minio.local:9000')).toBe('us-east-1'));
+  it('override prioritaire', () =>
+    expect(deriveRegion('https://s3.fr-par.scw.cloud', 'eu-central-1')).toBe('eu-central-1'));
 });
 
 describe('validateProfile', () => {
