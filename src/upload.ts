@@ -37,8 +37,17 @@ export async function addFilesTo(destPrefix: string): Promise<EnqueueResult | nu
   return S3Uploader.enqueue(payload);
 }
 
-/** Dossier Android choisi via pickDirectory, énuméré récursivement puis uploadé sous `destPrefix`. */
-export async function addFolderTo(destPrefix: string): Promise<EnqueueResult | null> {
+export type FolderImportMode = 'root' | 'contents';
+
+/**
+ * Dossier Android choisi via pickDirectory, énuméré récursivement puis uploadé sous
+ * `destPrefix`. `chooseMode` demande : importer le dossier lui-même (`root` → clés
+ * `<dest>/<nomDossier>/…`) ou seulement son contenu (`contents` → `<dest>/…`).
+ */
+export async function addFolderTo(
+  destPrefix: string,
+  chooseMode: (rootName: string, count: number) => Promise<FolderImportMode | null>,
+): Promise<EnqueueResult | null> {
   const dir = await pickDirectory({ requestLongTermAccess: true });
   const { files } = await S3Uploader.listTree(dir.uri);
   if (!files.length) return { queued: 0, skippedInQueue: 0, skippedExisting: 0 };
@@ -51,13 +60,17 @@ export async function addFolderTo(destPrefix: string): Promise<EnqueueResult | n
         .pop() ?? 'dossier',
     ) || 'dossier';
 
+  const mode = await chooseMode(rootName, files.length);
+  if (!mode) return null;
+  const includeRoot = mode === 'root';
+
   const rawKeys = files.map(f => {
     const rel = f.relativePath
       .split('/')
       .map(sanitizeSegment)
       .filter(Boolean)
       .join('/');
-    return joinKey(destPrefix, `${rootName}/${rel}`);
+    return joinKey(destPrefix, includeRoot ? `${rootName}/${rel}` : rel);
   });
   const keys = dedupeKeys(rawKeys);
   const payload: UploadItemInput[] = files.map((f, i) => ({

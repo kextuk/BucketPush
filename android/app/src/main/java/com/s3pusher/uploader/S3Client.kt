@@ -98,7 +98,11 @@ class S3Client(
         }
     }
 
-    fun listObjectsV2(prefix: String, continuationToken: String?, maxKeys: Int = 500): ListResult {
+    suspend fun listObjectsV2(
+        prefix: String,
+        continuationToken: String?,
+        maxKeys: Int = 500,
+    ): ListResult {
         val query = buildMap {
             put("list-type", "2")
             put("delimiter", "/")
@@ -106,13 +110,7 @@ class S3Client(
             if (prefix.isNotEmpty()) put("prefix", prefix)
             if (continuationToken != null) put("continuation-token", continuationToken)
         }
-        val url = withQuery(config.bucketUrl(), query)
-        execute(build("GET", url, config.canonicalBucketPath(), query,
-            SigV4Signer.EMPTY_SHA256, null)).use { r ->
-            val body = r.body?.string().orEmpty()
-            if (!r.isSuccessful) throw parseError(r, body, "ListObjectsV2 a échoué")
-            return parseListObjects(body)
-        }
+        return withRetry("ListObjectsV2") { listObjectsPage(query) }
     }
 
     fun deleteObject(key: String) {
@@ -124,7 +122,7 @@ class S3Client(
     }
 
     /** Liste les versions (S3 `?versions`, supporté par B2). `delimiter=""` = récursif. */
-    fun listObjectVersions(
+    suspend fun listObjectVersions(
         prefix: String,
         keyMarker: String?,
         versionIdMarker: String?,
@@ -138,12 +136,14 @@ class S3Client(
             if (keyMarker != null) put("key-marker", keyMarker)
             if (versionIdMarker != null) put("version-id-marker", versionIdMarker)
         }
-        val url = withQuery(config.bucketUrl(), query)
-        execute(build("GET", url, config.canonicalBucketPath(), query,
-            SigV4Signer.EMPTY_SHA256, null)).use { r ->
-            val body = r.body?.string().orEmpty()
-            if (!r.isSuccessful) throw parseError(r, body, "ListObjectVersions a échoué")
-            return parseVersions(body)
+        return withRetry("ListObjectVersions") {
+            val url = withQuery(config.bucketUrl(), query)
+            execute(build("GET", url, config.canonicalBucketPath(), query,
+                SigV4Signer.EMPTY_SHA256, null)).use { r ->
+                val body = r.body?.string().orEmpty()
+                if (!r.isSuccessful) throw parseError(r, body, "ListObjectVersions a échoué")
+                parseVersions(body)
+            }
         }
     }
 
@@ -165,8 +165,18 @@ class S3Client(
         }
     }
 
-    /** Totaux (octets, nb d'objets) sous un préfixe, paginé, sans delimiter. */
-    fun prefixTotals(prefix: String): Pair<Long, Long> {
+    private fun listObjectsPage(query: Map<String, String>): ListResult {
+        val url = withQuery(config.bucketUrl(), query)
+        execute(build("GET", url, config.canonicalBucketPath(), query,
+            SigV4Signer.EMPTY_SHA256, null)).use { r ->
+            val body = r.body?.string().orEmpty()
+            if (!r.isSuccessful) throw parseError(r, body, "ListObjectsV2 a échoué")
+            return parseListObjects(body)
+        }
+    }
+
+    /** Totaux (octets, nb d'objets) sous un préfixe, paginé, sans delimiter. Retry sur 503. */
+    suspend fun prefixTotals(prefix: String): Pair<Long, Long> {
         var bytes = 0L
         var count = 0L
         var token: String? = null
@@ -177,21 +187,15 @@ class S3Client(
                 if (prefix.isNotEmpty()) put("prefix", prefix)
                 if (token != null) put("continuation-token", token!!)
             }
-            val url = withQuery(config.bucketUrl(), query)
-            execute(build("GET", url, config.canonicalBucketPath(), query,
-                SigV4Signer.EMPTY_SHA256, null)).use { r ->
-                val body = r.body?.string().orEmpty()
-                if (!r.isSuccessful) throw parseError(r, body, "ListObjectsV2 a échoué")
-                val res = parseListObjects(body)
-                res.objects.forEach { bytes += it.size; count++ }
-                token = res.nextToken
-            }
+            val res = withRetry("ListObjectsV2") { listObjectsPage(query) }
+            res.objects.forEach { bytes += it.size; count++ }
+            token = res.nextToken
         } while (token != null)
         return bytes to count
     }
 
-    /** Toutes les clés sous un préfixe (sans delimiter), paginé. */
-    fun listAllKeys(prefix: String): List<String> {
+    /** Toutes les clés sous un préfixe (sans delimiter), paginé. Retry sur 503. */
+    suspend fun listAllKeys(prefix: String): List<String> {
         val keys = ArrayList<String>()
         var token: String? = null
         do {
@@ -201,15 +205,9 @@ class S3Client(
                 if (prefix.isNotEmpty()) put("prefix", prefix)
                 if (token != null) put("continuation-token", token!!)
             }
-            val url = withQuery(config.bucketUrl(), query)
-            execute(build("GET", url, config.canonicalBucketPath(), query,
-                SigV4Signer.EMPTY_SHA256, null)).use { r ->
-                val body = r.body?.string().orEmpty()
-                if (!r.isSuccessful) throw parseError(r, body, "ListObjectsV2 a échoué")
-                val res = parseListObjects(body)
-                res.objects.forEach { keys.add(it.key) }
-                token = res.nextToken
-            }
+            val res = withRetry("ListObjectsV2") { listObjectsPage(query) }
+            res.objects.forEach { keys.add(it.key) }
+            token = res.nextToken
         } while (token != null)
         return keys
     }

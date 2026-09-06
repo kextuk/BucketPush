@@ -443,7 +443,21 @@ export function BrowserScreen({ navigation }: Props) {
   const addFolder = async () => {
     setOp({ label: 'Lecture du dossier', done: 0, total: 0 });
     try {
-      const res = await addFolderTo(prefix);
+      const res = await addFolderTo(prefix, (rootName, count) => {
+        setOp(null);
+        return new Promise(resolve => {
+          Alert.alert(
+            `Importer « ${rootName} »`,
+            `${count} fichier(s) → /${prefix}\nUploader le dossier lui-même, ou seulement son contenu ?`,
+            [
+              { text: 'Annuler', style: 'cancel', onPress: () => resolve(null) },
+              { text: 'Le contenu', onPress: () => resolve('contents') },
+              { text: `« ${rootName}/ »`, onPress: () => resolve('root') },
+            ],
+            { cancelable: true, onDismiss: () => resolve(null) },
+          );
+        });
+      });
       if (res) {
         hydrateQueue();
         const msg = summarizeEnqueue(res);
