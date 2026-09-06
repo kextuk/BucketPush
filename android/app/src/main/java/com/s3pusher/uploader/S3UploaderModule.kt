@@ -404,7 +404,9 @@ class S3UploaderModule(private val reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun clearCompleted(promise: Promise) {
-        db.deleteByStatus(Status.COMPLETED, Status.CANCELED, Status.FAILED)
+        db.deleteByStatus(
+            Status.COMPLETED, Status.CANCELED, Status.FAILED, Status.SKIPPED,
+        )
         promise.resolve(null)
     }
 

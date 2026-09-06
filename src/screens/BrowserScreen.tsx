@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -6,6 +6,7 @@ import {
   Modal,
   Pressable,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -24,9 +25,11 @@ import { formatBytes, formatSpeed } from '../format';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Browser'>;
 
-type Row =
-  | { kind: 'folder'; prefix: string; name: string }
-  | { kind: 'object'; entry: S3ListEntry; name: string };
+type Folder = { kind: 'folder'; prefix: string; name: string };
+type FileRow = { kind: 'file'; entry: S3ListEntry; name: string };
+type Row = Folder | FileRow;
+type Mode = 'browse' | 'select' | 'move';
+type SortMode = 'name' | 'size' | 'recent';
 
 const prefixOf = (key: string) => key.slice(0, key.lastIndexOf('/') + 1);
 const baseName = (key: string) => key.slice(key.lastIndexOf('/') + 1);
@@ -34,15 +37,20 @@ const uniq = (a: string[]) => Array.from(new Set(a));
 
 export function BrowserScreen({ navigation }: Props) {
   const [prefix, setPrefix] = useState('');
-  const [rows, setRows] = useState<Row[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [files, setFiles] = useState<FileRow[]>([]);
   const [nextToken, setNextToken] = useState<string | undefined>();
   const [loading, setLoading] = useState(false);
-  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [moveSource, setMoveSource] = useState<{ key: string; name: string } | null>(null);
   const [configured, setConfigured] = useState(true);
+
+  const [mode, setMode] = useState<Mode>('browse');
+  const [selected, setSelected] = useState<string[]>([]);
+  const [sortMode, setSortMode] = useState<SortMode>('name');
+  const [op, setOp] = useState<{ label: string; done: number; total: number } | null>(null);
+  const [sheet, setSheet] = useState(false);
   const [prompt, setPrompt] = useState<
-    { kind: 'newFolder' } | { kind: 'rename'; key: string; name: string } | null
+    { kind: 'newFolder' } | { kind: 'rename'; key: string } | null
   >(null);
 
   const { summary, hydrate: hydrateQueue } = useUploader();
@@ -58,35 +66,33 @@ export function BrowserScreen({ navigation }: Props) {
     });
   }, [navigation]);
 
-  const load = useCallback(
-    async (p: string, token?: string) => {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await S3Uploader.listObjects(p, token);
-        const markerFolders = res.objects
-          .filter(o => o.key.endsWith('/') && o.key !== p)
-          .map(o => o.key);
-        const folderPrefixes = uniq([...res.prefixes, ...markerFolders]);
-        const folders: Row[] = folderPrefixes.map(cp => ({
-          kind: 'folder',
-          prefix: cp,
-          name: cp.slice(p.length).replace(/\/$/, ''),
-        }));
-        const objects: Row[] = res.objects
-          .filter(o => !o.key.endsWith('/'))
-          .map(o => ({ kind: 'object', entry: o, name: o.key.slice(p.length) }));
-        setRows(prev => (token ? [...prev, ...folders, ...objects] : [...folders, ...objects]));
-        setNextToken(res.nextToken);
-      } catch (e: any) {
-        setError(String(e?.message ?? e));
-        if (!token) setRows([]);
-      } finally {
-        setLoading(false);
+  const load = useCallback(async (p: string, token?: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await S3Uploader.listObjects(p, token);
+      const markerFolders = res.objects
+        .filter(o => o.key.endsWith('/') && o.key !== p)
+        .map(o => o.key);
+      const fs: Folder[] = uniq([...res.prefixes, ...markerFolders])
+        .map(cp => ({ kind: 'folder' as const, prefix: cp, name: cp.slice(p.length).replace(/\/$/, '') }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      const os: FileRow[] = res.objects
+        .filter(o => !o.key.endsWith('/'))
+        .map(o => ({ kind: 'file' as const, entry: o, name: o.key.slice(p.length) }));
+      setFolders(prev => (token ? [...prev, ...fs] : fs));
+      setFiles(prev => (token ? [...prev, ...os] : os));
+      setNextToken(res.nextToken);
+    } catch (e: any) {
+      setError(String(e?.message ?? e));
+      if (!token) {
+        setFolders([]);
+        setFiles([]);
       }
-    },
-    [],
-  );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     load(prefix);
@@ -104,51 +110,102 @@ export function BrowserScreen({ navigation }: Props) {
   );
 
   const reload = useCallback(() => load(prefix), [load, prefix]);
-  const goUp = () => setPrefix(p => p.replace(/[^/]+\/$/, ''));
 
-  const withBusy = async (label: string, fn: () => Promise<void>) => {
-    setBusy(label);
-    try {
-      await fn();
-    } catch (e: any) {
-      Alert.alert('Échec', String(e?.message ?? e));
-    } finally {
-      setBusy(null);
+  const sortedFiles = useMemo(() => {
+    const arr = [...files];
+    if (sortMode === 'size') arr.sort((a, b) => b.entry.size - a.entry.size);
+    else if (sortMode === 'recent') {
+      arr.sort(
+        (a, b) =>
+          (Date.parse(b.entry.lastModified ?? '') || 0) -
+          (Date.parse(a.entry.lastModified ?? '') || 0),
+      );
+    } else arr.sort((a, b) => a.name.localeCompare(b.name));
+    return arr;
+  }, [files, sortMode]);
+
+  const rows: Row[] = useMemo(() => [...folders, ...sortedFiles], [folders, sortedFiles]);
+
+  // en mode déplacement : on n'affiche que les dossiers (destinations) + les fichiers déplacés
+  const displayRows = useMemo(
+    () =>
+      mode === 'move'
+        ? rows.filter(r => r.kind === 'folder' || selected.includes(r.entry.key))
+        : rows,
+    [rows, mode, selected],
+  );
+
+  // --- Sélection --------------------------------------------------------------
+
+  const exitMode = () => {
+    setMode('browse');
+    setSelected([]);
+  };
+  const toggle = (key: string) =>
+    setSelected(prev => {
+      const next = prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key];
+      if (next.length === 0 && mode === 'select') setMode('browse');
+      return next;
+    });
+  const selectAll = () => setSelected(sortedFiles.map(f => f.entry.key));
+
+  const onFilePress = (entry: S3ListEntry) => {
+    if (mode === 'move') return;
+    if (mode === 'browse') {
+      setMode('select');
+      setSelected([entry.key]);
+    } else {
+      toggle(entry.key);
     }
   };
 
-  // --- Ajouts ---------------------------------------------------------------
+  // --- Opérations batch -----------------------------------------------------
 
-  const onAdd = () => {
-    if (moveSource) return;
-    Alert.alert('Ajouter dans ' + (prefix ? `/${prefix}` : 'la racine'), undefined, [
-      {
-        text: 'Fichiers…',
-        onPress: () =>
-          withBusy('Ajout…', async () => {
-            const res = await addFilesTo(prefix);
-            if (res) {
-              hydrateQueue();
-              const msg = summarizeEnqueue(res);
-              if (msg) Alert.alert('File d’attente', msg);
-            }
-          }),
-      },
-      {
-        text: 'Dossier Android…',
-        onPress: () =>
-          withBusy('Lecture du dossier…', async () => {
-            const res = await addFolderTo(prefix);
-            if (res) {
-              hydrateQueue();
-              const msg = summarizeEnqueue(res);
-              if (msg) Alert.alert('File d’attente', msg);
-            }
-          }),
-      },
-      { text: 'Nouveau dossier…', onPress: () => setPrompt({ kind: 'newFolder' }) },
-      { text: 'Annuler', style: 'cancel' },
-    ]);
+  const runBatch = async (
+    label: string,
+    keys: string[],
+    fn: (key: string) => Promise<void>,
+  ) => {
+    setOp({ label, done: 0, total: keys.length });
+    let failed = 0;
+    for (let i = 0; i < keys.length; i++) {
+      try {
+        await fn(keys[i]);
+      } catch {
+        failed++;
+      }
+      setOp({ label, done: i + 1, total: keys.length });
+    }
+    setOp(null);
+    exitMode();
+    reload();
+    if (failed) Alert.alert('Terminé avec des erreurs', `${failed}/${keys.length} en échec.`);
+  };
+
+  const pasteHere = () => {
+    const conflict = selected.some(k => prefixOf(k) === prefix);
+    if (conflict) {
+      Alert.alert('Destination invalide', 'Certains fichiers sont déjà dans ce dossier.');
+      return;
+    }
+    runBatch('Déplacement', selected, k =>
+      S3Uploader.moveObject(k, joinKey(prefix, baseName(k))),
+    );
+  };
+
+  const deleteSelected = () => {
+    Alert.alert(
+      `Supprimer ${selected.length} fichier(s) ?`,
+      'Action irréversible.',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Supprimer',
+          style: 'destructive',
+          onPress: () => runBatch('Suppression', selected, k => S3Uploader.deleteObject(k)),
+        },
+      ],
+    );
   };
 
   const submitPrompt = (value: string) => {
@@ -157,103 +214,76 @@ export function BrowserScreen({ navigation }: Props) {
     const name = sanitizeSegment(value);
     if (!p || !name) return;
     if (p.kind === 'newFolder') {
-      withBusy('Création…', async () => {
+      runBatch('Création', ['x'], async () => {
         await S3Uploader.createFolder(prefix, name);
-        reload();
       });
     } else {
       const dst = joinKey(prefixOf(p.key), name);
-      withBusy('Renommage…', async () => {
+      runBatch('Renommage', ['x'], async () => {
         await S3Uploader.moveObject(p.key, dst);
-        reload();
       });
     }
   };
 
-  // --- Actions objet / dossier -------------------------------------------
+  // --- Ajouts (FAB) --------------------------------------------------------
 
-  const onObjectLongPress = (entry: S3ListEntry) => {
-    Alert.alert(baseName(entry.key), `${formatBytes(entry.size)}\n${entry.key}`, [
-      { text: 'Déplacer…', onPress: () => setMoveSource({ key: entry.key, name: baseName(entry.key) }) },
-      {
-        text: 'Renommer…',
-        onPress: () => setPrompt({ kind: 'rename', key: entry.key, name: baseName(entry.key) }),
-      },
-      {
-        text: 'Supprimer',
-        style: 'destructive',
-        onPress: () =>
-          Alert.alert('Supprimer ?', entry.key, [
-            { text: 'Annuler', style: 'cancel' },
-            {
-              text: 'Supprimer',
-              style: 'destructive',
-              onPress: () =>
-                withBusy('Suppression…', async () => {
-                  await S3Uploader.deleteObject(entry.key);
-                  reload();
-                }),
-            },
-          ]),
-      },
-      { text: 'Fermer', style: 'cancel' },
-    ]);
+  const addFiles = async () => {
+    try {
+      const res = await addFilesTo(prefix);
+      if (res) {
+        hydrateQueue();
+        const msg = summarizeEnqueue(res);
+        if (msg) Alert.alert('File d’attente', msg);
+      }
+    } catch (e: any) {
+      if (e?.code !== 'OPERATION_CANCELED') Alert.alert('Erreur', String(e?.message ?? e));
+    }
+  };
+  const addFolder = async () => {
+    setOp({ label: 'Lecture du dossier', done: 0, total: 0 });
+    try {
+      const res = await addFolderTo(prefix);
+      if (res) {
+        hydrateQueue();
+        const msg = summarizeEnqueue(res);
+        if (msg) Alert.alert('File d’attente', msg);
+      }
+    } catch (e: any) {
+      if (e?.code !== 'OPERATION_CANCELED') Alert.alert('Erreur', String(e?.message ?? e));
+    } finally {
+      setOp(null);
+    }
   };
 
   const onFolderLongPress = (folderPrefix: string, name: string) => {
-    Alert.alert(name + '/', folderPrefix, [
+    Alert.alert(name + '/', 'Supprimer ce dossier et tout son contenu ?', [
+      { text: 'Annuler', style: 'cancel' },
       {
-        text: 'Supprimer le dossier et son contenu',
+        text: 'Supprimer',
         style: 'destructive',
-        onPress: () =>
-          Alert.alert('Tout supprimer sous ' + folderPrefix + ' ?', 'Action irréversible.', [
-            { text: 'Annuler', style: 'cancel' },
-            {
-              text: 'Supprimer',
-              style: 'destructive',
-              onPress: () =>
-                withBusy('Suppression…', async () => {
-                  const { deleted } = await S3Uploader.deletePrefix(folderPrefix);
-                  reload();
-                  Alert.alert('Supprimé', `${deleted} objet(s) supprimé(s).`);
-                }),
-            },
-          ]),
+        onPress: async () => {
+          setOp({ label: 'Suppression', done: 0, total: 0 });
+          try {
+            const { deleted } = await S3Uploader.deletePrefix(folderPrefix);
+            reload();
+            Alert.alert('Supprimé', `${deleted} objet(s).`);
+          } catch (e: any) {
+            Alert.alert('Échec', String(e?.message ?? e));
+          } finally {
+            setOp(null);
+          }
+        },
       },
-      { text: 'Fermer', style: 'cancel' },
     ]);
-  };
-
-  const pasteHere = () => {
-    if (!moveSource) return;
-    const dst = joinKey(prefix, baseName(moveSource.key));
-    if (dst === moveSource.key) {
-      Alert.alert('Même emplacement', 'Le fichier est déjà dans ce dossier.');
-      return;
-    }
-    withBusy('Déplacement…', async () => {
-      await S3Uploader.moveObject(moveSource.key, dst);
-      setMoveSource(null);
-      reload();
-    });
   };
 
   // --- Rendu -------------------------------------------------------------
 
-  const queueLabel =
-    summary.failedCount > 0
-      ? `File d’attente — ${summary.failedCount} échec(s)`
-      : summary.activeCount > 0
-        ? `${summary.activeCount} en cours · ${summary.pct}% · ${formatSpeed(summary.speedBps)}`
-        : summary.totalCount > 0
-          ? `${summary.doneCount}/${summary.totalCount} terminé(s)`
-          : '';
-
   if (!configured) {
     return (
       <View style={styles.container}>
-        <Pressable style={styles.noProfile} onPress={() => navigation.navigate('Profiles')}>
-          <Text style={styles.noProfileText}>
+        <Pressable style={styles.center} onPress={() => navigation.navigate('Profiles')}>
+          <Text style={styles.dimText}>
             Aucun profil S3 actif (ou clés manquantes).{'\n'}Appuie pour en configurer un.
           </Text>
         </Pressable>
@@ -261,70 +291,148 @@ export function BrowserScreen({ navigation }: Props) {
     );
   }
 
+  const segments = prefix.split('/').filter(Boolean);
+
   return (
     <View style={styles.container}>
-      <View style={styles.pathBar}>
-        {prefix ? (
-          <Pressable onPress={goUp} hitSlop={8}>
-            <Text style={styles.up}>⬆</Text>
+      {/* Barre supérieure : mode-dépendante */}
+      {mode === 'browse' ? (
+        <View style={styles.topBar}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.crumbs}>
+            <Crumb label="Bucket" onPress={() => setPrefix('')} active={!segments.length} />
+            {segments.map((seg, i) => (
+              <React.Fragment key={i}>
+                <Text style={styles.sep}>›</Text>
+                <Crumb
+                  label={seg}
+                  active={i === segments.length - 1}
+                  onPress={() => setPrefix(segments.slice(0, i + 1).join('/') + '/')}
+                />
+              </React.Fragment>
+            ))}
+          </ScrollView>
+          <Pressable onPress={cycleSort(sortMode, setSortMode)} hitSlop={8}>
+            <Text style={styles.sortBtn}>{sortLabel(sortMode)}</Text>
           </Pressable>
-        ) : null}
-        <Text style={styles.path} numberOfLines={1}>
-          /{prefix}
-        </Text>
-        <Pressable onPress={reload} hitSlop={8}>
-          <Text style={styles.reload}>⟳</Text>
-        </Pressable>
-      </View>
+        </View>
+      ) : (
+        <View style={[styles.actionBar, mode === 'move' && styles.actionBarMove]}>
+          <Pressable onPress={exitMode} hitSlop={10}>
+            <Text style={styles.abClose}>✕</Text>
+          </Pressable>
+          {mode === 'select' ? (
+            <>
+              <Text style={styles.abTitle}>{selected.length} sélectionné(s)</Text>
+              <Pressable onPress={selectAll} hitSlop={8}>
+                <Text style={styles.abAction}>Tout</Text>
+              </Pressable>
+              <Pressable onPress={() => setMode('move')} hitSlop={8} disabled={!selected.length}>
+                <Text style={[styles.abAction, !selected.length && styles.abDisabled]}>
+                  Déplacer
+                </Text>
+              </Pressable>
+              {selected.length === 1 ? (
+                <Pressable
+                  onPress={() => setPrompt({ kind: 'rename', key: selected[0] })}
+                  hitSlop={8}>
+                  <Text style={styles.abAction}>Renommer</Text>
+                </Pressable>
+              ) : null}
+              <Pressable onPress={deleteSelected} hitSlop={8} disabled={!selected.length}>
+                <Text style={[styles.abAction, styles.abDanger, !selected.length && styles.abDisabled]}>
+                  Suppr.
+                </Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <Text style={styles.abTitle} numberOfLines={1}>
+                Déplacer {selected.length} → /{prefix}
+              </Text>
+              <Pressable onPress={pasteHere} hitSlop={8}>
+                <Text style={styles.abPaste}>Coller ici</Text>
+              </Pressable>
+            </>
+          )}
+        </View>
+      )}
 
-      {moveSource ? (
-        <View style={styles.moveBar}>
-          <Text style={styles.moveText} numberOfLines={1}>
-            Déplacer « {moveSource.name} » ici :
+      {mode === 'move' ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.crumbs}
+          style={styles.moveCrumbs}>
+          <Crumb label="Bucket" onPress={() => setPrefix('')} active={!segments.length} />
+          {segments.map((seg, i) => (
+            <React.Fragment key={i}>
+              <Text style={styles.sep}>›</Text>
+              <Crumb
+                label={seg}
+                active={i === segments.length - 1}
+                onPress={() => setPrefix(segments.slice(0, i + 1).join('/') + '/')}
+              />
+            </React.Fragment>
+          ))}
+        </ScrollView>
+      ) : null}
+
+      {op ? (
+        <View style={styles.opBar}>
+          <ActivityIndicator size="small" color="#fff" />
+          <Text style={styles.opText}>
+            {op.label}
+            {op.total > 1 ? ` ${op.done}/${op.total}` : '…'}
           </Text>
-          <View style={styles.moveBtns}>
-            <Pressable style={styles.moveBtn} onPress={pasteHere}>
-              <Text style={styles.moveBtnText}>Coller ici</Text>
-            </Pressable>
-            <Pressable onPress={() => setMoveSource(null)} hitSlop={8}>
-              <Text style={styles.moveCancel}>Annuler</Text>
-            </Pressable>
-          </View>
         </View>
       ) : null}
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       <FlatList
-        data={rows}
-        keyExtractor={(r, i) =>
-          (r.kind === 'folder' ? `f:${r.prefix}` : `o:${r.entry.key}`) + i}
+        data={displayRows}
+        keyExtractor={r => (r.kind === 'folder' ? `f:${r.prefix}` : `o:${r.entry.key}`)}
         contentContainerStyle={rows.length ? styles.listPad : styles.emptyWrap}
         refreshControl={
           <RefreshControl refreshing={loading && rows.length === 0} onRefresh={reload} />
         }
-        ListEmptyComponent={
-          loading ? undefined : <Text style={styles.empty}>Dossier vide</Text>
-        }
+        ListEmptyComponent={loading ? undefined : <Text style={styles.dimText}>Dossier vide</Text>}
         renderItem={({ item }) =>
           item.kind === 'folder' ? (
             <Pressable
               style={styles.row}
               onPress={() => setPrefix(item.prefix)}
-              onLongPress={() => onFolderLongPress(item.prefix, item.name)}>
-              <Text style={styles.folder}>📁 {item.name}/</Text>
+              onLongPress={() => mode === 'browse' && onFolderLongPress(item.prefix, item.name)}>
+              <Text style={styles.folderIcon}>📁</Text>
+              <Text style={styles.rowName} numberOfLines={1}>
+                {item.name}
+              </Text>
+              <Text style={styles.chevron}>›</Text>
             </Pressable>
           ) : (
             <Pressable
-              style={[styles.row, moveSource?.key === item.entry.key && styles.dim]}
-              onLongPress={() => onObjectLongPress(item.entry)}>
-              <Text style={styles.objName} numberOfLines={1}>
-                {item.name || item.entry.key}
-              </Text>
-              <Text style={styles.meta}>
-                {formatBytes(item.entry.size)}
-                {item.entry.lastModified ? ` · ${shortDate(item.entry.lastModified)}` : ''}
-              </Text>
+              style={[styles.row, mode === 'move' && styles.rowMoving]}
+              onPress={() => onFilePress(item.entry)}
+              onLongPress={() => onFilePress(item.entry)}>
+              {mode === 'select' ? (
+                <View style={[styles.check, selected.includes(item.entry.key) && styles.checkOn]}>
+                  {selected.includes(item.entry.key) ? <Text style={styles.checkMark}>✓</Text> : null}
+                </View>
+              ) : (
+                <Text style={styles.fileIcon}>·</Text>
+              )}
+              <View style={styles.rowMain}>
+                <Text style={styles.rowName} numberOfLines={1}>
+                  {item.name || baseName(item.entry.key)}
+                </Text>
+                <Text style={styles.rowMeta}>
+                  {formatBytes(item.entry.size)}
+                  {item.entry.lastModified ? ` · ${shortDate(item.entry.lastModified)}` : ''}
+                </Text>
+              </View>
             </Pressable>
           )
         }
@@ -336,34 +444,96 @@ export function BrowserScreen({ navigation }: Props) {
                 <Text style={styles.moreText}>Charger plus</Text>
               </Pressable>
             ) : null}
-            <Text style={styles.hint}>Appui long : déplacer / renommer / supprimer.</Text>
           </View>
         }
       />
 
-      {queueLabel ? (
+      {summary.totalCount > 0 ? (
         <Pressable style={styles.queueBanner} onPress={() => navigation.navigate('Queue')}>
-          <Text style={styles.queueText}>⬆ {queueLabel}</Text>
-          <Text style={styles.queueChevron}>›</Text>
+          <View style={styles.queueBarTrack}>
+            <View style={[styles.queueBarFill, { width: `${summary.pct}%` }]} />
+          </View>
+          <View style={styles.queueRow}>
+            <Text style={styles.queueText}>{queueLabel(summary)}</Text>
+            <Text style={styles.queueChevron}>›</Text>
+          </View>
         </Pressable>
       ) : null}
 
-      <Pressable
-        style={[styles.fab, busy != null && styles.fabDisabled]}
-        onPress={onAdd}
-        disabled={busy != null}>
-        <Text style={styles.fabText}>{busy ?? '+'}</Text>
-      </Pressable>
+      {mode === 'browse' && !op ? (
+        <Pressable style={styles.fab} onPress={() => setSheet(true)}>
+          <Text style={styles.fabText}>+</Text>
+        </Pressable>
+      ) : null}
+
+      <ActionSheet
+        visible={sheet}
+        title={`Ajouter dans ${prefix ? '/' + prefix : 'la racine'}`}
+        options={[
+          { label: 'Fichiers…', onPress: addFiles },
+          { label: 'Dossier Android…', onPress: addFolder },
+          { label: 'Nouveau dossier…', onPress: () => setPrompt({ kind: 'newFolder' }) },
+        ]}
+        onClose={() => setSheet(false)}
+      />
 
       <PromptModal
         visible={prompt != null}
         title={prompt?.kind === 'rename' ? 'Renommer' : 'Nouveau dossier'}
-        initial={prompt?.kind === 'rename' ? prompt.name : ''}
+        initial={prompt?.kind === 'rename' ? baseName(prompt.key) : ''}
         placeholder={prompt?.kind === 'rename' ? 'Nouveau nom' : 'Nom du dossier'}
         onCancel={() => setPrompt(null)}
         onSubmit={submitPrompt}
       />
     </View>
+  );
+}
+
+// --- Sous-composants -------------------------------------------------------
+
+function Crumb({ label, onPress, active }: { label: string; onPress: () => void; active: boolean }) {
+  return (
+    <Pressable onPress={onPress} hitSlop={6}>
+      <Text style={[styles.crumb, active && styles.crumbActive]} numberOfLines={1}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+function ActionSheet({
+  visible,
+  title,
+  options,
+  onClose,
+}: {
+  visible: boolean;
+  title?: string;
+  options: { label: string; onPress: () => void; destructive?: boolean }[];
+  onClose: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={sh.backdrop} onPress={onClose}>
+        <View style={sh.card}>
+          {title ? <Text style={sh.title}>{title}</Text> : null}
+          {options.map((o, i) => (
+            <Pressable
+              key={i}
+              style={sh.opt}
+              onPress={() => {
+                onClose();
+                o.onPress();
+              }}>
+              <Text style={[sh.optText, o.destructive && sh.destructive]}>{o.label}</Text>
+            </Pressable>
+          ))}
+          <Pressable style={sh.opt} onPress={onClose}>
+            <Text style={[sh.optText, sh.cancel]}>Annuler</Text>
+          </Pressable>
+        </View>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -388,23 +558,24 @@ function PromptModal({
   }, [visible, initial]);
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-      <Pressable style={mstyles.backdrop} onPress={onCancel}>
-        <Pressable style={mstyles.card} onPress={() => {}}>
-          <Text style={mstyles.title}>{title}</Text>
+      <Pressable style={sh.backdrop} onPress={onCancel}>
+        <Pressable style={sh.promptCard} onPress={() => {}}>
+          <Text style={sh.title}>{title}</Text>
           <TextInput
-            style={mstyles.input}
+            style={sh.input}
             value={v}
             onChangeText={setV}
             placeholder={placeholder}
+            placeholderTextColor="#888"
             autoFocus
             autoCapitalize="none"
           />
-          <View style={mstyles.actions}>
+          <View style={sh.promptActions}>
             <Pressable onPress={onCancel} hitSlop={8}>
-              <Text style={mstyles.cancel}>Annuler</Text>
+              <Text style={sh.cancelBtn}>Annuler</Text>
             </Pressable>
             <Pressable onPress={() => onSubmit(v.trim())} disabled={!v.trim()} hitSlop={8}>
-              <Text style={[mstyles.ok, !v.trim() && mstyles.okDisabled]}>OK</Text>
+              <Text style={[sh.okBtn, !v.trim() && sh.okDisabled]}>OK</Text>
             </Pressable>
           </View>
         </Pressable>
@@ -413,48 +584,110 @@ function PromptModal({
   );
 }
 
+// --- Helpers -------------------------------------------------------------
+
 function shortDate(iso: string): string {
   const d = new Date(iso);
   return isNaN(d.getTime()) ? '' : d.toLocaleDateString();
+}
+function sortLabel(m: SortMode): string {
+  return m === 'name' ? 'A→Z' : m === 'size' ? 'Taille' : 'Récent';
+}
+function cycleSort(m: SortMode, set: (m: SortMode) => void) {
+  return () => set(m === 'name' ? 'size' : m === 'size' ? 'recent' : 'name');
+}
+function queueLabel(s: {
+  failedCount: number;
+  activeCount: number;
+  pct: number;
+  speedBps: number;
+  doneCount: number;
+  totalCount: number;
+}): string {
+  if (s.failedCount > 0) return `File d’attente — ${s.failedCount} échec(s)`;
+  if (s.activeCount > 0)
+    return `${s.activeCount} en cours · ${s.pct}% · ${formatSpeed(s.speedBps)}`;
+  return `${s.doneCount}/${s.totalCount} terminé(s)`;
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
   headerBtn: { color: '#0a84ff', fontSize: 15, fontWeight: '600' },
-  noProfile: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
-  noProfileText: { textAlign: 'center', opacity: 0.7, fontSize: 14, lineHeight: 20 },
-  pathBar: {
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
+  dimText: { textAlign: 'center', opacity: 0.6, fontSize: 14, lineHeight: 20 },
+
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingRight: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#8886',
+  },
+  crumbs: { alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, gap: 6 },
+  moveCrumbs: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#8886' },
+  crumb: { fontSize: 13, color: '#0a84ff', maxWidth: 160 },
+  crumbActive: { color: '#8e8e93', fontWeight: '700' },
+  sep: { opacity: 0.4, marginHorizontal: 2 },
+  sortBtn: { fontSize: 12, color: '#0a84ff', fontWeight: '600' },
+
+  actionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#0a84ff',
+  },
+  actionBarMove: { backgroundColor: '#1b5e20' },
+  abClose: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  abTitle: { color: '#fff', fontSize: 14, fontWeight: '600', flex: 1 },
+  abAction: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  abDanger: { color: '#ffd7d7' },
+  abDisabled: { opacity: 0.4 },
+  abPaste: { color: '#fff', fontSize: 14, fontWeight: '800' },
+
+  opBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#333',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  opText: { color: '#fff', fontSize: 13 },
+
+  error: { color: '#c62828', padding: 12, fontSize: 13 },
+  listPad: { paddingBottom: 180 },
+  emptyWrap: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 120 },
+
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#8886',
-  },
-  up: { fontSize: 18 },
-  reload: { fontSize: 18, opacity: 0.6 },
-  path: { flex: 1, fontFamily: 'monospace', fontSize: 13, opacity: 0.8 },
-  moveBar: { backgroundColor: '#0a84ff', paddingHorizontal: 16, paddingVertical: 10 },
-  moveText: { color: '#fff', fontSize: 13 },
-  moveBtns: { flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 8 },
-  moveBtn: { backgroundColor: '#fff', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 6 },
-  moveBtnText: { color: '#0a84ff', fontWeight: '700' },
-  moveCancel: { color: '#fff', fontWeight: '600' },
-  error: { color: '#c62828', padding: 12, fontSize: 13 },
-  listPad: { paddingBottom: 170 },
-  emptyWrap: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 120 },
-  empty: { opacity: 0.6, textAlign: 'center' },
-  row: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 13,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#8884',
   },
-  dim: { opacity: 0.4 },
-  folder: { fontSize: 15, fontWeight: '600' },
-  objName: { fontSize: 15 },
-  meta: { fontSize: 12, opacity: 0.6, marginTop: 4 },
+  rowMoving: { backgroundColor: 'rgba(27,94,32,0.12)' },
+  rowMain: { flex: 1 },
+  rowName: { flex: 1, fontSize: 15 },
+  rowMeta: { fontSize: 12, opacity: 0.55, marginTop: 3 },
+  folderIcon: { fontSize: 18 },
+  fileIcon: { width: 18, textAlign: 'center', opacity: 0.4, fontSize: 18 },
+  chevron: { fontSize: 20, opacity: 0.35 },
+  check: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: '#0a84ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkOn: { backgroundColor: '#0a84ff' },
+  checkMark: { color: '#fff', fontSize: 13, fontWeight: '800' },
+
   footer: { padding: 16, gap: 12, alignItems: 'center' },
   moreBtn: {
     paddingHorizontal: 16,
@@ -464,48 +697,51 @@ const styles = StyleSheet.create({
     borderColor: '#0a84ff',
   },
   moreText: { color: '#0a84ff', fontWeight: '600' },
-  hint: { fontSize: 11, opacity: 0.5 },
-  queueBanner: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
+
+  queueBanner: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: '#1c1c1e' },
+  queueBarTrack: { height: 3, backgroundColor: '#3a3a3c' },
+  queueBarFill: { height: 3, backgroundColor: '#0a84ff' },
+  queueRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#1c1c1e',
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
   queueText: { color: '#fff', fontSize: 13, fontWeight: '600' },
   queueChevron: { color: '#fff', fontSize: 20 },
+
   fab: {
     position: 'absolute',
-    right: 16,
-    bottom: 64,
-    minWidth: 56,
+    right: 18,
+    bottom: 76,
+    width: 56,
     height: 56,
-    paddingHorizontal: 16,
     borderRadius: 28,
     backgroundColor: '#0a84ff',
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 4,
+    elevation: 5,
   },
-  fabDisabled: { opacity: 0.6 },
-  fabText: { color: '#fff', fontSize: 22, fontWeight: '700' },
+  fabText: { color: '#fff', fontSize: 28, fontWeight: '700', marginTop: -2 },
 });
 
-const mstyles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: '#0008',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 32,
+const sh = StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: '#0009', justifyContent: 'flex-end' },
+  card: {
+    backgroundColor: '#1c1c1e',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingVertical: 8,
+    paddingBottom: 24,
   },
-  card: { width: '100%', backgroundColor: '#1c1c1e', borderRadius: 14, padding: 20 },
-  title: { color: '#fff', fontSize: 16, fontWeight: '700', marginBottom: 12 },
+  title: { color: '#fff', fontSize: 14, fontWeight: '700', padding: 16, opacity: 0.8 },
+  opt: { paddingVertical: 15, paddingHorizontal: 20 },
+  optText: { color: '#0a84ff', fontSize: 16, fontWeight: '600' },
+  destructive: { color: '#ff5a5a' },
+  cancel: { color: '#8e8e93' },
+
+  promptCard: { margin: 24, backgroundColor: '#1c1c1e', borderRadius: 14, padding: 20 },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#888',
@@ -514,9 +750,10 @@ const mstyles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 15,
     color: '#fff',
+    marginTop: 12,
   },
-  actions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 24, marginTop: 16 },
-  cancel: { color: '#aaa', fontSize: 15 },
-  ok: { color: '#0a84ff', fontSize: 15, fontWeight: '700' },
+  promptActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 24, marginTop: 16 },
+  cancelBtn: { color: '#8e8e93', fontSize: 15 },
+  okBtn: { color: '#0a84ff', fontSize: 15, fontWeight: '700' },
   okDisabled: { opacity: 0.4 },
 });
