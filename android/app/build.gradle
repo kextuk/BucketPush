@@ -85,7 +85,7 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
-        versionName "1.0"
+        versionName "1.0.0"
     }
     signingConfigs {
         debug {
@@ -94,15 +94,30 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        // Clé de signature Play. Renseigner dans ~/.gradle/gradle.properties (hors dépôt) :
+        //   BUCKETPUSH_STORE_FILE=/chemin/absolu/bucketpush-upload.keystore
+        //   BUCKETPUSH_KEY_ALIAS=bucketpush
+        //   BUCKETPUSH_STORE_PASSWORD=...
+        //   BUCKETPUSH_KEY_PASSWORD=...
+        release {
+            if (project.hasProperty('BUCKETPUSH_STORE_FILE')) {
+                storeFile file(BUCKETPUSH_STORE_FILE)
+                storePassword BUCKETPUSH_STORE_PASSWORD
+                keyAlias BUCKETPUSH_KEY_ALIAS
+                keyPassword BUCKETPUSH_KEY_PASSWORD
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            // vraie clé si fournie, sinon retombe sur la debug (pour un APK de test local ;
+            // NON acceptable par le Play Store).
+            signingConfig project.hasProperty('BUCKETPUSH_STORE_FILE')
+                ? signingConfigs.release
+                : signingConfigs.debug
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }
