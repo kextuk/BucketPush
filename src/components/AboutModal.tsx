@@ -14,8 +14,6 @@ const PERMS: { key: string; why: string }[] = [
   { key: 'about.permNetwork', why: 'about.permNetworkWhy' },
   { key: 'about.permNotif', why: 'about.permNotifWhy' },
   { key: 'about.permBackground', why: 'about.permBackgroundWhy' },
-  { key: 'about.permNearby', why: 'about.permNearbyWhy' },
-  { key: 'about.permBiometric', why: 'about.permBiometricWhy' },
 ];
 
 export function AboutModal({

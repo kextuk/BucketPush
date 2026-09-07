@@ -334,12 +334,6 @@ const DICT: Record<Lang, Record<string, string>> = {
       'Arrière-plan (service de premier plan, veille, redémarrage)',
     'about.permBackgroundWhy':
       'Poursuivre un gros transfert écran éteint ou app fermée, empêcher la mise en veille pendant le transfert, et reprendre les transferts en attente après un redémarrage du téléphone.',
-    'about.permNearby': 'Appareils à proximité / réseau local',
-    'about.permNearbyWhy':
-      'Présent uniquement dans la version de développement, pour connecter l’app au serveur de développement sur le réseau local. Absent de la version publiée. Aucune fonction Bluetooth ni partage à proximité.',
-    'about.permBiometric': 'Biométrie',
-    'about.permBiometricWhy':
-      'Déclarée par le composant de stockage sécurisé des clés. Utilisée seulement si tu choisis de protéger l’accès par empreinte ou reconnaissance faciale.',
   },
   en: {
     'nav.browser': 'BucketPush',
@@ -601,12 +595,6 @@ const DICT: Record<Lang, Record<string, string>> = {
     'about.permBackground': 'Background (foreground service, wake lock, boot)',
     'about.permBackgroundWhy':
       'Keep a large transfer going with the screen off or the app closed, prevent sleep during a transfer, and resume pending transfers after the phone reboots.',
-    'about.permNearby': 'Nearby devices / local network',
-    'about.permNearbyWhy':
-      'Present only in the development build, to connect the app to the local dev server. Not in the published app. No Bluetooth or nearby-sharing feature.',
-    'about.permBiometric': 'Biometrics',
-    'about.permBiometricWhy':
-      'Declared by the secure key-storage component. Used only if you choose to protect access with fingerprint or face unlock.',
   },
 };
 
