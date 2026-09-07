@@ -340,9 +340,6 @@ const DICT: Record<Lang, Record<string, string>> = {
     'providers.title': 'Fournisseurs S3 compatibles',
     'providers.intro':
       'Offres indicatives (janvier 2026) — vérifie toujours sur le site du fournisseur, ça change souvent. Appuie sur un nom pour ouvrir le site.',
-    'providers.referral': 'parrainage',
-    'providers.referralNote':
-      'Parrainage : Scaleway, Storj et IDrive proposent des crédits (pour toi et le filleul). Backblaze B2, Cloudflare R2, Wasabi et AWS n’ont pas de parrainage grand public.',
     'providers.note.b2':
       '10 Go gratuits à vie, 1 Go/jour de téléchargement gratuit. Pas de limite de durée. (Fournisseur utilisé par défaut ici.)',
     'providers.note.r2':
@@ -628,9 +625,6 @@ const DICT: Record<Lang, Record<string, string>> = {
     'providers.title': 'S3-compatible providers',
     'providers.intro':
       'Indicative offers (January 2026) — always check the provider’s site, they change often. Tap a name to open the site.',
-    'providers.referral': 'referral',
-    'providers.referralNote':
-      'Referrals: Scaleway, Storj and IDrive give credits (to you and the referee). Backblaze B2, Cloudflare R2, Wasabi and AWS have no consumer referral scheme.',
     'providers.note.b2':
       '10 GB free forever, 1 GB/day free download. No time limit. (Default provider used here.)',
     'providers.note.r2':
