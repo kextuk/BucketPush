@@ -1,5 +1,6 @@
 import * as Keychain from 'react-native-keychain';
 import type { S3Config } from './native/S3Uploader';
+import { SEED_CREDENTIALS } from './seed';
 import {
   STORE_VERSION,
   blankProfile,
@@ -128,13 +129,57 @@ async function migrateLegacy(): Promise<ProfileStore | null> {
   return store;
 }
 
+// --- Profil de démo (builds de test) ---------------------------------------
+// TODO: retirer avant la production publique. Bucket B2 jetable (capacités
+// read/write sans delete + règle de cycle de vie 1 j). Les identifiants ne
+// sont PAS dans le dépôt public : voir src/seed.ts.
+const SEED = {
+  name: 'Bucket de test (BucketPush)',
+  endpoint: 'https://s3.eu-central-003.backblazeb2.com',
+  bucket: 'bucket-test-bucketpush',
+};
+
+/** Injecte le profil de démo au tout premier lancement (store vierge, jamais seedé). */
+async function seedTestProfile(): Promise<ProfileStore> {
+  const meta: ProfileMeta = {
+    ...blankProfile(SEED.name),
+    endpoint: SEED.endpoint,
+    bucket: SEED.bucket,
+    forcePathStyle: true,
+  };
+  const next: ProfileStore = {
+    activeId: meta.id,
+    profiles: [meta],
+    version: STORE_VERSION,
+    seeded: true,
+  };
+  await writeStore(next);
+  // Clés absentes du dépôt public : le profil est créé « prêt » et l'utilisateur
+  // colle ses identifiants. Un build de test peut les fournir via src/seed.ts.
+  if (SEED_CREDENTIALS.accessKeyId && SEED_CREDENTIALS.secretAccessKey) {
+    await writeCredentials(meta.id, {
+      accessKeyId: SEED_CREDENTIALS.accessKeyId,
+      secretAccessKey: SEED_CREDENTIALS.secretAccessKey,
+    });
+  }
+  return next;
+}
+
 async function getStore(): Promise<ProfileStore> {
   const raw = (await readStoreRaw()) ?? (await migrateLegacy());
-  if (!raw) return { activeId: null, profiles: [], version: STORE_VERSION };
-  if (raw.version === STORE_VERSION) return raw;
-  const migrated = migrateStore(raw); // v1 (réglages à plat) → connexion + overrides
-  await writeStore(migrated);
-  return migrated;
+  let store: ProfileStore;
+  if (!raw) {
+    store = { activeId: null, profiles: [], version: STORE_VERSION };
+  } else if (raw.version === STORE_VERSION) {
+    store = raw;
+  } else {
+    store = migrateStore(raw); // v1 (réglages à plat) → connexion + overrides
+    await writeStore(store);
+  }
+  if (!store.seeded && store.profiles.length === 0) {
+    store = await seedTestProfile();
+  }
+  return store;
 }
 
 // --- Credentials -------------------------------------------------------------
