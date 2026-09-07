@@ -126,10 +126,15 @@ class MultipartUploader(
                         val etag = retry("UploadPart ${part.number}") {
                             val body = RangeRequestBody(
                                 context.contentResolver, uri, part.offset, part.size,
-                            ) { written ->
-                                synchronized(lock) { inFlight[part.number] = written }
-                                emitThrottled()
-                            }
+                                onBytesWritten = { written ->
+                                    synchronized(lock) { inFlight[part.number] = written }
+                                    emitThrottled()
+                                },
+                                // coupe l'envoi en cours dès la pause / l'annulation
+                                abortCheck = {
+                                    control.isPaused() || control.isCanceled(item.id)
+                                },
+                            )
                             s3.uploadPart(item.key, uid, part.number, body)
                         }
                         synchronized(lock) {
@@ -142,7 +147,12 @@ class MultipartUploader(
                         throw ce
                     } catch (e: Exception) {
                         synchronized(lock) { inFlight.remove(part.number) }
-                        failure.compareAndSet(null, e.message ?: e.toString())
+                        if (isAbort(e)) {
+                            if (control.isCanceled(item.id)) stopReason.set(Outcome.CANCELED)
+                            else stopReason.set(Outcome.PAUSED)
+                        } else {
+                            failure.compareAndSet(null, e.message ?: e.toString())
+                        }
                     } finally {
                         sem.release()
                     }
@@ -212,15 +222,25 @@ class MultipartUploader(
                 return block()
             } catch (ce: CancellationException) {
                 throw ce
-            } catch (e: S3Client.S3Exception) {
-                attempt++
-                if (!e.retryable || attempt >= maxAttempts) throw e
             } catch (e: Exception) {
-                attempt++
-                if (attempt >= maxAttempts) throw e
+                if (isAbort(e)) throw e // pause / annulation : on ne réessaie pas
+                if (e is S3Client.S3Exception && !e.retryable) throw e
+                if (++attempt >= maxAttempts) throw e
             }
             delay(delayMs + Random.nextLong(0, 500))
             delayMs = (delayMs * 2).coerceAtMost(16_000L)
         }
+    }
+
+    /** Vrai si `t` (ou une de ses causes) est une interruption volontaire du transfert. */
+    private fun isAbort(t: Throwable?): Boolean {
+        var cur = t
+        var depth = 0
+        while (cur != null && depth < 8) {
+            if (cur is TransferAbortedException) return true
+            cur = cur.cause
+            depth++
+        }
+        return false
     }
 }

@@ -8,6 +8,10 @@ import okio.BufferedSink
 import java.io.FileInputStream
 import java.io.IOException
 
+/** Levée depuis [RangeRequestBody.writeTo] quand [RangeRequestBody.abortCheck] devient vrai
+ *  (pause / annulation) : coupe l'envoi d'une part en cours au lieu d'attendre la fin. */
+class TransferAbortedException : IOException("transfert interrompu (pause ou annulation)")
+
 /**
  * Corps de requête OkHttp qui streame **une plage d'octets** d'un fichier `content://`
  * sans jamais la charger en mémoire.
@@ -23,6 +27,7 @@ class RangeRequestBody(
     private val offset: Long,
     private val length: Long,
     private val onBytesWritten: ((Long) -> Unit)? = null,
+    private val abortCheck: (() -> Boolean)? = null,
 ) : RequestBody() {
 
     override fun contentType(): MediaType? = null
@@ -47,6 +52,7 @@ class RangeRequestBody(
                 var remaining = length
                 var written = 0L
                 while (remaining > 0L) {
+                    if (abortCheck?.invoke() == true) throw TransferAbortedException()
                     val toRead = minOf(buf.size.toLong(), remaining).toInt()
                     val read = fis.read(buf, 0, toRead)
                     if (read == -1) {
