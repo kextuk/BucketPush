@@ -1,0 +1,50 @@
+BucketPush License
+==================
+
+Copyright (c) 2026 Kévin R
+
+This is a source-available license. It is based on the MIT License, with the
+right to sell removed and a non-resale condition added. It is NOT an
+OSI-approved open-source license.
+
+Résumé non contractuel (français) : tu peux utiliser, copier, modifier et
+redistribuer ce logiciel librement, y compris en entreprise. Tu ne peux pas
+le vendre, ni vendre un dérivé, ni le proposer comme produit ou service
+payant, sans l'accord écrit de l'auteur. Facturer un service distinct
+(support, hébergement, intégration pour un client) reste autorisé tant que
+ce n'est pas le logiciel lui-même qui est vendu.
+
+--------------------------------------------------------------------------------
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to use,
+copy, modify, merge, publish, and distribute copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to the
+following conditions:
+
+1. Attribution. The above copyright notice, this permission notice, and the
+   "BucketPush" name shall be retained in all copies or substantial portions
+   of the Software, including modified versions. Modified versions must not
+   misrepresent their origin.
+
+2. No resale. You may not sell the Software, sell any derivative work based on
+   it, offer the Software or a derivative work to third parties as a paid
+   product or a paid service, or otherwise require payment for access to it,
+   without prior written permission from the copyright holder. Charging only
+   for a separate service (for example support, hosting, or integration work
+   performed for a client) is permitted, provided the Software itself is not
+   the item being sold.
+
+3. All other use, including use within a for-profit organization, is
+   permitted at no charge under the conditions above.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+For a commercial license (to sell the Software or a derivative, or to include
+it in a paid product or service), contact: the project repository (issues)

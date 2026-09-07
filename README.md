@@ -130,3 +130,10 @@ android/app/src/main/java/com/s3pusher/uploader/
   MODE_PRIVATE)` (l'app a déjà `allowBackup=false`).
 - Module natif introuvable côté JS : `npx react-native run-android` reconstruit bien le
   natif (pas seulement Metro).
+
+## Licence
+
+Source-available — voir [`LICENSE`](LICENSE). En résumé : utilisation, modification et
+redistribution libres (y compris en entreprise), mais **revente interdite** — tu ne peux
+pas vendre le logiciel ni un dérivé, ni en faire un produit ou service payant, sans
+accord écrit. Ce n'est pas une licence open source au sens OSI.
