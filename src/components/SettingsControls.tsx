@@ -60,6 +60,7 @@ export function IntInput({
       style={styles.input}
       keyboardType="number-pad"
       placeholder={placeholder}
+      placeholderTextColor="#8a8a8e"
       value={value != null ? String(value) : ''}
       onChangeText={txt => {
         const s = txt.replace(/[^0-9]/g, '');
@@ -78,6 +79,8 @@ export const controlStyles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: Platform.OS === 'ios' ? 12 : 8,
     fontSize: 15,
+    color: '#1b1b1f', // thème clair forcé : texte sombre, ne pas hériter du dark natif
+    backgroundColor: '#fff',
   },
 });
 

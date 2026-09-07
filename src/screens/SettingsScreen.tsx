@@ -11,6 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import type { RootStackParamList } from '../../App';
@@ -46,6 +47,7 @@ const has = (ov: PrefOverrides, k: keyof TransferPrefs) =>
 
 export function SettingsScreen({ navigation, route }: Props) {
   useLang();
+  const insets = useSafeAreaInsets();
   const profileId = route.params?.profileId;
   const [cfg, setCfg] = useState<Profile>(DEFAULT_CONFIG);
   const [globalPrefs, setGlobalPrefs] = useState<TransferPrefs>(DEFAULT_PREFS);
@@ -201,10 +203,13 @@ export function SettingsScreen({ navigation, route }: Props) {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={[styles.content, { paddingBottom: 48 + insets.bottom }]}
+        keyboardShouldPersistTaps="handled">
         <Field label={t('settings.name')} hint={t('settings.nameHint')}>
           <TextInput
             style={styles.input}
+            placeholderTextColor="#8a8a8e"
             value={cfg.name}
             onChangeText={v => set('name', v)}
             placeholder={t('settings.namePlaceholder')}
@@ -214,6 +219,7 @@ export function SettingsScreen({ navigation, route }: Props) {
         <Field label={t('settings.endpoint')} hint={t('settings.endpointHint')}>
           <TextInput
             style={styles.input}
+            placeholderTextColor="#8a8a8e"
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="url"
@@ -226,6 +232,7 @@ export function SettingsScreen({ navigation, route }: Props) {
         <Field label={t('settings.bucket')}>
           <TextInput
             style={styles.input}
+            placeholderTextColor="#8a8a8e"
             autoCapitalize="none"
             autoCorrect={false}
             value={cfg.bucket}
@@ -236,6 +243,7 @@ export function SettingsScreen({ navigation, route }: Props) {
         <Field label={t('settings.keyPrefix')} hint={t('settings.keyPrefixHint')}>
           <TextInput
             style={styles.input}
+            placeholderTextColor="#8a8a8e"
             autoCapitalize="none"
             autoCorrect={false}
             value={cfg.keyPrefix}
@@ -246,6 +254,7 @@ export function SettingsScreen({ navigation, route }: Props) {
         <Field label={t('settings.accessKeyId')}>
           <TextInput
             style={styles.input}
+            placeholderTextColor="#8a8a8e"
             autoCapitalize="none"
             autoCorrect={false}
             value={accessKeyId}
@@ -256,6 +265,7 @@ export function SettingsScreen({ navigation, route }: Props) {
         <Field label={t('settings.secret')}>
           <TextInput
             style={styles.input}
+            placeholderTextColor="#8a8a8e"
             autoCapitalize="none"
             autoCorrect={false}
             secureTextEntry
@@ -274,6 +284,7 @@ export function SettingsScreen({ navigation, route }: Props) {
         <Field label={t('settings.region')} hint={t('settings.regionHint')}>
           <TextInput
             style={styles.input}
+            placeholderTextColor="#8a8a8e"
             autoCapitalize="none"
             autoCorrect={false}
             placeholder="auto"
@@ -339,6 +350,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: Platform.OS === 'ios' ? 12 : 8,
     fontSize: 15,
+    color: '#1b1b1f',
+    backgroundColor: '#fff',
   },
   section: { fontSize: 15, fontWeight: '700', marginTop: 8, marginBottom: 6 },
   intro: { fontSize: 12, opacity: 0.6, marginBottom: 16 },

@@ -8,6 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
@@ -32,6 +33,7 @@ const PENDING = new Set(['queued', 'uploading', 'paused']);
 
 export function ProfilesScreen({ navigation }: Props) {
   useLang();
+  const insets = useSafeAreaInsets();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [switchingId, setSwitchingId] = useState<string | null>(null);
@@ -157,7 +159,9 @@ export function ProfilesScreen({ navigation }: Props) {
       <FlatList
         data={profiles}
         keyExtractor={p => p.id}
-        contentContainerStyle={profiles.length ? undefined : styles.emptyWrap}
+        contentContainerStyle={
+          profiles.length ? { paddingBottom: 96 + insets.bottom } : styles.emptyWrap
+        }
         ListEmptyComponent={
           <Text style={styles.empty}>{t('profiles.empty')}</Text>
         }
@@ -208,7 +212,7 @@ export function ProfilesScreen({ navigation }: Props) {
           );
         }}
       />
-      <Pressable style={styles.fab} onPress={addProfile}>
+      <Pressable style={[styles.fab, { bottom: 20 + insets.bottom }]} onPress={addProfile}>
         <Text style={styles.fabText}>{t('profiles.new')}</Text>
       </Pressable>
 

@@ -8,6 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import type { RootStackParamList } from '../../App';
@@ -34,6 +35,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
 export function AppSettingsScreen({ navigation }: Props) {
   useLang();
+  const insets = useSafeAreaInsets();
   const [prefs, setPrefs] = useState<TransferPrefs>(DEFAULT_PREFS);
   const [loaded, setLoaded] = useState(false);
   const [about, setAbout] = useState(false);
@@ -67,7 +69,7 @@ export function AppSettingsScreen({ navigation }: Props) {
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, { paddingBottom: 48 + insets.bottom }]}
       keyboardShouldPersistTaps="handled">
       <Row label={t('settings.language')}>
         <View style={styles.langRow}>

@@ -18,6 +18,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
@@ -57,6 +58,7 @@ const uniq = (a: string[]) => Array.from(new Set(a));
 
 export function BrowserScreen({ navigation }: Props) {
   const lang = useLang();
+  const insets = useSafeAreaInsets();
   const [profileName, setProfileName] = useState('');
   const [prefix, setPrefix] = useState('');
   const [versions, setVersions] = useState<ObjectVersion[]>([]);
@@ -975,7 +977,11 @@ export function BrowserScreen({ navigation }: Props) {
       <FlatList
         data={displayRows}
         keyExtractor={r => (r.kind === 'folder' ? `f:${r.prefix}` : `o:${r.key}`)}
-        contentContainerStyle={displayRows.length ? styles.listPad : styles.emptyWrap}
+        contentContainerStyle={
+          displayRows.length
+            ? { paddingBottom: 180 + insets.bottom }
+            : styles.emptyWrap
+        }
         refreshControl={
           <RefreshControl refreshing={loading && rows.length === 0} onRefresh={reload} />
         }
@@ -1069,7 +1075,9 @@ export function BrowserScreen({ navigation }: Props) {
         }
       />
 
-      <Pressable style={styles.queueBanner} onPress={() => navigation.navigate('Queue')}>
+      <Pressable
+        style={[styles.queueBanner, { paddingBottom: insets.bottom }]}
+        onPress={() => navigation.navigate('Queue')}>
         {summary.totalCount > 0 ? (
           <View style={styles.queueBarTrack}>
             <View style={[styles.queueBarFill, { width: `${summary.pct}%` }]} />
@@ -1082,7 +1090,7 @@ export function BrowserScreen({ navigation }: Props) {
       </Pressable>
 
       {mode === 'browse' && !op ? (
-        <Pressable style={styles.fab} onPress={() => setSheet(true)}>
+        <Pressable style={[styles.fab, { bottom: 76 + insets.bottom }]} onPress={() => setSheet(true)}>
           <Text style={styles.fabText}>+</Text>
         </Pressable>
       ) : null}
@@ -1277,7 +1285,7 @@ const styles = StyleSheet.create({
   filterInput: {
     flex: 1,
     fontSize: 15,
-    color: '#fff',
+    color: '#1b1b1f',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderWidth: StyleSheet.hairlineWidth,
