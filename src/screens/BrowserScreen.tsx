@@ -1,4 +1,11 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -86,6 +93,7 @@ export function BrowserScreen({ navigation }: Props) {
     | null
   >(null);
   const [moveFolder, setMoveFolder] = useState<{ prefix: string; name: string } | null>(null);
+  const activeProfileId = useRef<string | null>(null);
 
   const { summary, hydrate: hydrateQueue } = useUploader();
 
@@ -181,8 +189,28 @@ export function BrowserScreen({ navigation }: Props) {
       (async () => {
         const ok = await applyNativeConfig();
         setConfigured(ok);
-        setProfileName((await getActiveProfile())?.name ?? '');
-        if (ok) load(prefix);
+        const active = await getActiveProfile();
+        setProfileName(active?.name ?? '');
+
+        const id = active?.id ?? null;
+        const switched = activeProfileId.current !== null && activeProfileId.current !== id;
+        activeProfileId.current = id;
+
+        if (switched) {
+          // nouveau profil : on repart de la racine, on jette la sélection en cours
+          setSelected([]);
+          setMode('browse');
+          setFilter('');
+          setShowFilter(false);
+          setFolderSizes({});
+          if (prefix !== '') {
+            setPrefix(''); // relance load('') via l'effet sur `prefix`
+          } else if (ok) {
+            load('');
+          }
+        } else if (ok) {
+          load(prefix);
+        }
         hydrateQueue();
       })();
     }, [prefix, load, hydrateQueue]),
