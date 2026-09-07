@@ -76,7 +76,7 @@ const DICT: Record<Lang, Record<string, string>> = {
   fr: {
     'nav.browser': 'BucketPush',
     'nav.queue': 'File d’attente',
-    'nav.profiles': 'Profils S3',
+    'nav.profiles': 'Sélection du profil S3',
     'nav.settings': 'Paramètres',
     'nav.profileEdit': 'Profil S3',
     'nav.versions': 'Versions',
@@ -242,6 +242,7 @@ const DICT: Record<Lang, Record<string, string>> = {
     'profiles.stay': 'Rester',
     'profiles.activated': 'Profil activé',
     'profiles.activatedNoKeys': 'Ce profil n’a pas de clés S3. Ajoute-les via « Modifier ».',
+    'profiles.activating': 'Activation…',
 
     'settings.name': 'Nom du profil',
     'settings.nameHint': 'ex. Scaleway prod, MinIO maison',
@@ -338,7 +339,7 @@ const DICT: Record<Lang, Record<string, string>> = {
   en: {
     'nav.browser': 'BucketPush',
     'nav.queue': 'Queue',
-    'nav.profiles': 'S3 profiles',
+    'nav.profiles': 'S3 profile selection',
     'nav.settings': 'Settings',
     'nav.profileEdit': 'S3 profile',
     'nav.versions': 'Versions',
@@ -504,6 +505,7 @@ const DICT: Record<Lang, Record<string, string>> = {
     'profiles.stay': 'Stay',
     'profiles.activated': 'Profile activated',
     'profiles.activatedNoKeys': 'This profile has no S3 keys. Add them via “Edit”.',
+    'profiles.activating': 'Activating…',
 
     'settings.name': 'Profile name',
     'settings.nameHint': 'e.g. Scaleway prod, home MinIO',

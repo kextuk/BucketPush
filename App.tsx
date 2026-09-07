@@ -14,7 +14,7 @@ import { AppSettingsScreen } from './src/screens/AppSettingsScreen';
 import { BrowserScreen } from './src/screens/BrowserScreen';
 import { ProfilesScreen } from './src/screens/ProfilesScreen';
 import { VersionsScreen } from './src/screens/VersionsScreen';
-import { loadConfig, toNativeConfig } from './src/config';
+import { loadConfig, toNativeConfig, type Profile } from './src/config';
 import { S3Uploader } from './src/native/S3Uploader';
 import { initLang, t, useLang } from './src/i18n';
 
@@ -29,8 +29,9 @@ export type RootStackParamList = {
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-export async function applyNativeConfig(): Promise<boolean> {
-  const cfg = await loadConfig();
+/** Pousse la config au moteur natif. `profile` évite une relecture du trousseau. */
+export async function applyNativeConfig(profile?: Profile): Promise<boolean> {
+  const cfg = profile ?? (await loadConfig());
   const native = await toNativeConfig(cfg);
   if (!native) return false;
   try {

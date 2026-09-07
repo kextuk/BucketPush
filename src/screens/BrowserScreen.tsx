@@ -9,6 +9,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useColorScheme,
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -16,6 +17,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import type { RootStackParamList } from '../../App';
 import { applyNativeConfig } from '../../App';
+import { getActiveProfile } from '../config';
 import { S3Uploader, type ObjectVersion } from '../native/S3Uploader';
 import { useUploader } from '../useUploader';
 import { addFilesTo, addFolderTo, downloadTo, joinKey, summarizeEnqueue } from '../upload';
@@ -48,6 +50,8 @@ const uniq = (a: string[]) => Array.from(new Set(a));
 
 export function BrowserScreen({ navigation }: Props) {
   const lang = useLang();
+  const scheme = useColorScheme();
+  const [profileName, setProfileName] = useState('');
   const [prefix, setPrefix] = useState('');
   const [versions, setVersions] = useState<ObjectVersion[]>([]);
   const [commonPrefixes, setCommonPrefixes] = useState<string[]>([]);
@@ -86,7 +90,26 @@ export function BrowserScreen({ navigation }: Props) {
   const { summary, hydrate: hydrateQueue } = useUploader();
 
   useLayoutEffect(() => {
+    const dark = scheme === 'dark';
     navigation.setOptions({
+      // eslint-disable-next-line react/no-unstable-nested-components
+      headerTitle: () => (
+        <View style={styles.titleWrap}>
+          <Text style={styles.brand} numberOfLines={1}>
+            <Text style={[styles.brandBucket, dark ? styles.brandBucketDark : styles.brandBucketLight]}>
+              Bucket
+            </Text>
+            <Text style={styles.brandPush}>Push</Text>
+          </Text>
+          {profileName ? (
+            <Text
+              style={[styles.titleProfile, dark ? styles.titleProfileDark : styles.titleProfileLight]}
+              numberOfLines={1}>
+              {profileName}
+            </Text>
+          ) : null}
+        </View>
+      ),
       // eslint-disable-next-line react/no-unstable-nested-components
       headerRight: () => (
         <View style={styles.headerRight}>
@@ -99,7 +122,7 @@ export function BrowserScreen({ navigation }: Props) {
         </View>
       ),
     });
-  }, [navigation, lang]);
+  }, [navigation, lang, profileName, scheme]);
 
   const load = useCallback(async (p: string, cursor?: Cursor) => {
     setLoading(true);
@@ -158,6 +181,7 @@ export function BrowserScreen({ navigation }: Props) {
       (async () => {
         const ok = await applyNativeConfig();
         setConfigured(ok);
+        setProfileName((await getActiveProfile())?.name ?? '');
         if (ok) load(prefix);
         hydrateQueue();
       })();
@@ -1100,6 +1124,15 @@ const styles = StyleSheet.create({
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   headerBtn: { color: '#0a84ff', fontSize: 15, fontWeight: '600' },
   headerGear: { color: '#0a84ff', fontSize: 19 },
+  titleWrap: { flexDirection: 'row', alignItems: 'baseline', gap: 7, maxWidth: 260 },
+  brand: { fontSize: 19 },
+  brandBucket: { fontWeight: '500', letterSpacing: 0.2 },
+  brandBucketDark: { color: '#f2f2f7' },
+  brandBucketLight: { color: '#1c1c1e' },
+  brandPush: { color: '#0a84ff', fontWeight: '800', letterSpacing: 0.2 },
+  titleProfile: { fontSize: 11, fontWeight: '600' },
+  titleProfileDark: { color: '#9a9aa0' },
+  titleProfileLight: { color: '#8a8a8e' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
   dimText: { textAlign: 'center', opacity: 0.6, fontSize: 14, lineHeight: 20 },
 

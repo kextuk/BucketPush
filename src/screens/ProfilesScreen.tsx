@@ -1,5 +1,13 @@
 import React, { useCallback, useState } from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
@@ -25,6 +33,7 @@ export function ProfilesScreen({ navigation }: Props) {
   useLang();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [switchingId, setSwitchingId] = useState<string | null>(null);
   const [menuProfile, setMenuProfile] = useState<Profile | null>(null);
 
   const load = useCallback(async () => {
@@ -49,17 +58,26 @@ export function ProfilesScreen({ navigation }: Props) {
   }, []);
 
   const activate = useCallback(
-    async (id: string) => {
-      if (id === activeId) return;
+    async (profile: Profile) => {
+      if (switchingId) return;
+      if (profile.id === activeId) {
+        navigation.navigate('Browser');
+        return;
+      }
       const pending = await pendingUploads();
       const go = async () => {
-        await Promise.all(pending.map(i => S3Uploader.cancel(i.id).catch(() => {})));
-        await S3Uploader.clearCompleted().catch(() => {}); // la file appartient au profil
-        await setActiveProfile(id);
-        const ok = await applyNativeConfig();
-        await load();
-        if (!ok) {
-          Alert.alert(t('profiles.activated'), t('profiles.activatedNoKeys'));
+        setSwitchingId(profile.id);
+        setActiveId(profile.id); // optimiste : l'indicateur bascule tout de suite
+        try {
+          await Promise.all(pending.map(i => S3Uploader.cancel(i.id).catch(() => {})));
+          await S3Uploader.clearCompleted().catch(() => {}); // la file appartient au profil
+          await setActiveProfile(profile.id);
+          const ok = await applyNativeConfig(profile);
+          if (!ok) {
+            Alert.alert(t('profiles.activated'), t('profiles.activatedNoKeys'));
+          }
+        } finally {
+          setSwitchingId(null);
         }
       };
       if (pending.length) {
@@ -76,7 +94,7 @@ export function ProfilesScreen({ navigation }: Props) {
         go();
       }
     },
-    [activeId, load, pendingUploads],
+    [activeId, switchingId, navigation, pendingUploads],
   );
 
   const addProfile = useCallback(async () => {
@@ -144,21 +162,37 @@ export function ProfilesScreen({ navigation }: Props) {
         }
         renderItem={({ item }) => {
           const active = item.id === activeId;
+          const switching = switchingId === item.id;
           return (
             <Pressable
-              style={[styles.row, active && styles.rowActive]}
-              onPress={() => activate(item.id)}
+              android_ripple={{ color: '#0a84ff22' }}
+              style={({ pressed }) => [
+                styles.row,
+                active && styles.rowActive,
+                pressed && styles.rowPressed,
+              ]}
+              onPress={() => activate(item)}
               onLongPress={() => setMenuProfile(item)}>
               <View style={styles.rowMain}>
-                <Text style={styles.name}>
-                  {active ? '● ' : '○ '}
-                  {item.name || t('profiles.noName')}
-                </Text>
+                <View style={styles.nameLine}>
+                  {switching ? (
+                    <ActivityIndicator size="small" color="#0a84ff" style={styles.dot} />
+                  ) : (
+                    <Text style={[styles.dot, active ? styles.dotOn : styles.dotOff]}>
+                      {active ? '●' : '○'}
+                    </Text>
+                  )}
+                  <Text style={styles.name} numberOfLines={1}>
+                    {item.name || t('profiles.noName')}
+                  </Text>
+                </View>
                 <Text style={styles.sub} numberOfLines={1}>
-                  {item.endpoint || t('profiles.noEndpoint')}
-                  {item.bucket ? ` · ${item.bucket}` : ''}
+                  {switching
+                    ? t('profiles.activating')
+                    : (item.endpoint || t('profiles.noEndpoint')) +
+                      (item.bucket ? ` · ${item.bucket}` : '')}
                 </Text>
-                {!item.hasCredentials ? (
+                {!item.hasCredentials && !switching ? (
                   <Text style={styles.warn}>{t('profiles.noKeys')}</Text>
                 ) : null}
               </View>
@@ -196,8 +230,13 @@ const styles = StyleSheet.create({
     borderBottomColor: '#8884',
   },
   rowActive: { backgroundColor: '#0a84ff18' },
+  rowPressed: { backgroundColor: '#8881' },
   rowMain: { flex: 1 },
-  name: { fontSize: 16, fontWeight: '600' },
+  nameLine: { flexDirection: 'row', alignItems: 'center' },
+  dot: { width: 22, fontSize: 18, marginRight: 6, textAlign: 'center' },
+  dotOn: { color: '#0a84ff' },
+  dotOff: { color: '#888', opacity: 0.6 },
+  name: { fontSize: 16, fontWeight: '600', flexShrink: 1 },
   sub: { fontSize: 12, opacity: 0.6, marginTop: 3 },
   warn: { fontSize: 11, color: '#c62828', marginTop: 3 },
   more: { fontSize: 22, opacity: 0.5, paddingHorizontal: 6 },
