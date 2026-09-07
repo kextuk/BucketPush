@@ -23,6 +23,7 @@ import {
 } from '../config';
 import { S3Uploader } from '../native/S3Uploader';
 import { ActionSheet } from '../components/Sheets';
+import { haptic } from '../haptic';
 import { t, useLang } from '../i18n';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Profiles'>;
@@ -172,7 +173,11 @@ export function ProfilesScreen({ navigation }: Props) {
                 pressed && styles.rowPressed,
               ]}
               onPress={() => activate(item)}
-              onLongPress={() => setMenuProfile(item)}>
+              delayLongPress={240}
+              onLongPress={() => {
+                haptic();
+                setMenuProfile(item);
+              }}>
               <View style={styles.rowMain}>
                 <View style={styles.nameLine}>
                   {switching ? (

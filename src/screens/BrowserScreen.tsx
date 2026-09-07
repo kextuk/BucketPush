@@ -31,6 +31,7 @@ import { addFilesTo, addFolderTo, downloadTo, joinKey, summarizeEnqueue } from '
 import { sanitizeSegment } from '../keys';
 import { ActionSheet, PromptModal, type SheetOption } from '../components/Sheets';
 import { formatBytes, formatBytesExact, formatSpeed } from '../format';
+import { haptic } from '../haptic';
 import { t, useLang } from '../i18n';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Browser'>;
@@ -357,8 +358,10 @@ export function BrowserScreen({ navigation }: Props) {
     }
   };
   const onFileLongPress = (key: string) => {
+    if (mode === 'move') return;
+    haptic();
     if (mode === 'select' && selected.length) setSelMenu(true);
-    else if (mode !== 'move') {
+    else {
       setMode('select');
       setSelected(prev => (prev.includes(key) ? prev : [...prev, key]));
     }
@@ -952,10 +955,16 @@ export function BrowserScreen({ navigation }: Props) {
             <Pressable
               style={[styles.row, item.ghost && styles.rowGhost]}
               onPress={() => setPrefix(item.prefix)}
-              onLongPress={() =>
-                mode === 'browse' &&
-                setFolderMenu({ prefix: item.prefix, name: item.name, ghost: item.ghost })
-              }>
+              delayLongPress={240}
+              onLongPress={() => {
+                if (mode !== 'browse') return;
+                haptic();
+                setFolderMenu({
+                  prefix: item.prefix,
+                  name: item.name,
+                  ghost: item.ghost,
+                });
+              }}>
               <Text style={styles.folderIcon}>{item.ghost ? '🗑' : '📁'}</Text>
               <View style={styles.rowMain}>
                 <Text style={styles.rowName} numberOfLines={1}>
@@ -987,6 +996,7 @@ export function BrowserScreen({ navigation }: Props) {
                 mode === 'move' && styles.rowMoving,
               ]}
               onPress={() => onFileTap(item.key)}
+              delayLongPress={240}
               onLongPress={() => onFileLongPress(item.key)}>
               {mode === 'select' ? (
                 <View style={[styles.check, selected.includes(item.key) && styles.checkOn]}>
