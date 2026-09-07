@@ -210,12 +210,14 @@ export const S3Uploader = {
   },
   /**
    * Annule les uploads multipart inachevés (parts orphelines facturées par B2).
-   * Préserve ceux suivis par la file locale et ceux de moins de `minAgeHours`.
+   * Sans `force` : préserve ceux suivis par la file locale et ceux de moins de
+   * `minAgeHours`. Avec `force` : annule tout, sans garde-fou.
    */
   cleanUnfinishedUploads(
     minAgeHours = 24,
+    force = false,
   ): Promise<{ aborted: number; skipped: number; failed: number; errors: string[] }> {
-    return S3UploaderNative.cleanUnfinishedUploads(minAgeHours);
+    return S3UploaderNative.cleanUnfinishedUploads(minAgeHours, force);
   },
   createFolder(prefix: string, name: string): Promise<void> {
     return S3UploaderNative.createFolder(prefix, name);

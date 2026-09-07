@@ -489,11 +489,11 @@ class S3UploaderModule(private val reactContext: ReactApplicationContext) :
      * Résout `{ aborted, skipped, failed, errors }`.
      */
     @ReactMethod
-    fun cleanUnfinishedUploads(minAgeHours: Double, promise: Promise) {
+    fun cleanUnfinishedUploads(minAgeHours: Double, force: Boolean, promise: Promise) {
         withS3(promise) { s3, _ ->
             val all = s3.listMultipartUploads()
             val cutoff = System.currentTimeMillis() - (minAgeHours * 3_600_000).toLong()
-            val tracked = db.allItems()
+            val tracked = if (force) emptySet() else db.allItems()
                 .filter { it.status != Status.COMPLETED && it.status != Status.CANCELED }
                 .mapNotNull { it.uploadId }
                 .toHashSet()
@@ -501,6 +501,7 @@ class S3UploaderModule(private val reactContext: ReactApplicationContext) :
             var skipped = 0
             val toAbort = all.filter { u ->
                 when {
+                    force -> true
                     u.uploadId in tracked -> { skipped++; false }
                     (parseIso8601Millis(u.initiated) ?: 0L) > cutoff -> { skipped++; false }
                     else -> true

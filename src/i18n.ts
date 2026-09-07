@@ -202,8 +202,9 @@ const DICT: Record<Lang, Record<string, string>> = {
     'tools.cleanUnfinished': 'Nettoyer les uploads inachevés',
     'tools.cleanUnfinishedQ': 'Nettoyer les uploads inachevés ?',
     'tools.cleanUnfinishedBody':
-      'Annule les uploads multipart commencés il y a plus de 24 h et jamais finalisés (leurs parties sont facturées par B2). Les transferts en cours ou en pause dans la file, et ceux de moins de 24 h, sont conservés.',
-    'tools.cleanUnfinishedBtn': 'Nettoyer',
+      'Uploads multipart commencés mais jamais finalisés (parts facturées par B2).\n\n« Prudent » : n’annule que ceux de plus de 24 h et non suivis par la file.\n« Tout annuler » : annule TOUS les uploads inachevés — un transfert en pause reprendra alors de zéro.',
+    'tools.cleanUnfinishedSafe': 'Prudent',
+    'tools.cleanUnfinishedAll': 'Tout annuler',
     'tools.cleanUnfinishedResult': '{aborted} annulé(s), {skipped} conservé(s), {failed} en échec.',
     'size.repoLabel': 'Dépôt entier',
     'size.rootLabel': 'Racine du bucket',
@@ -503,8 +504,9 @@ const DICT: Record<Lang, Record<string, string>> = {
     'tools.cleanUnfinished': 'Clean unfinished uploads',
     'tools.cleanUnfinishedQ': 'Clean unfinished uploads?',
     'tools.cleanUnfinishedBody':
-      'Aborts multipart uploads started over 24h ago and never finished (their parts are billed by B2). Transfers still running or paused in the queue, and those under 24h old, are kept.',
-    'tools.cleanUnfinishedBtn': 'Clean',
+      'Multipart uploads started but never finished (parts billed by B2).\n\n"Safe": only aborts those over 24h old and not tracked by the queue.\n"Abort all": aborts EVERY unfinished upload — a paused transfer will then restart from zero.',
+    'tools.cleanUnfinishedSafe': 'Safe',
+    'tools.cleanUnfinishedAll': 'Abort all',
     'tools.cleanUnfinishedResult': '{aborted} aborted, {skipped} kept, {failed} failed.',
     'size.repoLabel': 'Whole repo',
     'size.rootLabel': 'Bucket root',
