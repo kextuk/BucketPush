@@ -669,6 +669,39 @@ export function BrowserScreen({ navigation }: Props) {
     );
   };
 
+  const cleanUnfinished = () => {
+    Alert.alert(
+      t('tools.cleanUnfinishedQ'),
+      t('tools.cleanUnfinishedBody'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('tools.cleanUnfinishedBtn'),
+          style: 'destructive',
+          onPress: async () => {
+            setOp({ label: t('tools.cleanUnfinished'), done: 0, total: 0 });
+            try {
+              const r = await S3Uploader.cleanUnfinishedUploads(24);
+              Alert.alert(
+                r.failed ? t('op.withErrors') : t('common.done'),
+                t('tools.cleanUnfinishedResult', {
+                  aborted: r.aborted,
+                  skipped: r.skipped,
+                  failed: r.failed,
+                }) + (r.errors.length ? '\n\n' + r.errors.slice(0, 5).join('\n') : ''),
+              );
+            } catch (e: any) {
+              Alert.alert(t('common.failure'), String(e?.message ?? e));
+            } finally {
+              setOp(null);
+            }
+          },
+        },
+      ],
+      { cancelable: true },
+    );
+  };
+
   const purgeFolder = (folderPrefix: string) => {
     Alert.alert(
       t('folder.purgeAllQ'),
@@ -1095,6 +1128,11 @@ export function BrowserScreen({ navigation }: Props) {
             label: t('tools.purgeAll'),
             destructive: true,
             onPress: () => purgeVersions('', t('size.repoLabel')),
+          },
+          {
+            label: t('tools.cleanUnfinished'),
+            destructive: true,
+            onPress: cleanUnfinished,
           },
         ]}
         onClose={() => setToolsMenu(false)}

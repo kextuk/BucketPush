@@ -208,6 +208,15 @@ export const S3Uploader = {
   purgeOldVersions(prefix: string): Promise<PurgeResult> {
     return S3UploaderNative.purgeOldVersions(prefix);
   },
+  /**
+   * Annule les uploads multipart inachevés (parts orphelines facturées par B2).
+   * Préserve ceux suivis par la file locale et ceux de moins de `minAgeHours`.
+   */
+  cleanUnfinishedUploads(
+    minAgeHours = 24,
+  ): Promise<{ aborted: number; skipped: number; failed: number; errors: string[] }> {
+    return S3UploaderNative.cleanUnfinishedUploads(minAgeHours);
+  },
   createFolder(prefix: string, name: string): Promise<void> {
     return S3UploaderNative.createFolder(prefix, name);
   },

@@ -472,6 +472,70 @@ class S3UploaderModule(private val reactContext: ReactApplicationContext) :
         }
     }
 
+    private fun parseIso8601Millis(s: String?): Long? {
+        if (s.isNullOrBlank()) return null
+        return try {
+            val fmt = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+            fmt.timeZone = java.util.TimeZone.getTimeZone("UTC")
+            fmt.parse(s.substringBefore('.').removeSuffix("Z").trim())?.time
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Annule les uploads multipart inachevés (parts orphelines facturées par B2).
+     * Préserve ceux encore suivis par la file locale et ceux de moins de `minAgeHours`.
+     * Résout `{ aborted, skipped, failed, errors }`.
+     */
+    @ReactMethod
+    fun cleanUnfinishedUploads(minAgeHours: Double, promise: Promise) {
+        withS3(promise) { s3, _ ->
+            val all = s3.listMultipartUploads()
+            val cutoff = System.currentTimeMillis() - (minAgeHours * 3_600_000).toLong()
+            val tracked = db.allItems()
+                .filter { it.status != Status.COMPLETED && it.status != Status.CANCELED }
+                .mapNotNull { it.uploadId }
+                .toHashSet()
+
+            var skipped = 0
+            val toAbort = all.filter { u ->
+                when {
+                    u.uploadId in tracked -> { skipped++; false }
+                    (parseIso8601Millis(u.initiated) ?: 0L) > cutoff -> { skipped++; false }
+                    else -> true
+                }
+            }
+
+            val ok = java.util.concurrent.atomic.AtomicInteger(0)
+            val errs = java.util.Collections.synchronizedList(ArrayList<String>())
+            kotlinx.coroutines.coroutineScope {
+                val sem = kotlinx.coroutines.sync.Semaphore(6)
+                toAbort.forEach { u ->
+                    launch(Dispatchers.IO) {
+                        sem.acquire()
+                        try {
+                            s3.abortMultipartUpload(u.key, u.uploadId)
+                            ok.incrementAndGet()
+                        } catch (e: Exception) {
+                            errs.add("${u.key} : ${e.message ?: e.javaClass.simpleName}")
+                        } finally {
+                            sem.release()
+                        }
+                    }
+                }
+            }
+            promise.resolve(Arguments.createMap().apply {
+                putInt("aborted", ok.get())
+                putInt("skipped", skipped)
+                putInt("failed", errs.size)
+                putArray("errors", Arguments.createArray().apply {
+                    errs.take(20).forEach { pushString(it) }
+                })
+            })
+        }
+    }
+
     /** Restaure les clés « supprimées » : retire les delete markers de tête. Résout `{ restored }`. */
     @ReactMethod
     fun restoreKeys(keys: ReadableArray, promise: Promise) {

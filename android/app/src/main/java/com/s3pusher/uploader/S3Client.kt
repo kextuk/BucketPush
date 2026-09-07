@@ -73,6 +73,14 @@ class S3Client(
         val nextVersionIdMarker: String?,
     )
 
+    data class MultipartUpload(val key: String, val uploadId: String, val initiated: String?)
+
+    data class MultipartUploadsResult(
+        val uploads: List<MultipartUpload>,
+        val nextKeyMarker: String?,
+        val nextUploadIdMarker: String?,
+    )
+
     // --- Opérations ---------------------------------------------------------
 
     /** Test de connectivité / credentials : HEAD sur le bucket. */
@@ -154,6 +162,34 @@ class S3Client(
             SigV4Signer.EMPTY_SHA256, null)).use { r ->
             if (!r.isSuccessful && r.code != 404) throw parseError(r, "DeleteVersion a échoué")
         }
+    }
+
+    /** Liste les uploads multipart commencés mais non finalisés (S3 `?uploads`). Paginé. */
+    suspend fun listMultipartUploads(): List<MultipartUpload> {
+        val out = ArrayList<MultipartUpload>()
+        var keyMarker: String? = null
+        var uploadIdMarker: String? = null
+        do {
+            val query = buildMap {
+                put("uploads", "")
+                put("max-uploads", "1000")
+                if (keyMarker != null) put("key-marker", keyMarker!!)
+                if (uploadIdMarker != null) put("upload-id-marker", uploadIdMarker!!)
+            }
+            val res = withRetry("ListMultipartUploads") {
+                val url = withQuery(config.bucketUrl(), query)
+                execute(build("GET", url, config.canonicalBucketPath(), query,
+                    SigV4Signer.EMPTY_SHA256, null)).use { r ->
+                    val body = r.body?.string().orEmpty()
+                    if (!r.isSuccessful) throw parseError(r, body, "ListMultipartUploads a échoué")
+                    parseMultipartUploads(body)
+                }
+            }
+            out.addAll(res.uploads)
+            keyMarker = res.nextKeyMarker
+            uploadIdMarker = res.nextUploadIdMarker
+        } while (keyMarker != null || uploadIdMarker != null)
+        return out
     }
 
     /** Télécharge un objet en streaming vers `out` (mémoire constante). */
@@ -785,6 +821,59 @@ class S3Client(
             out,
             if (truncated) nextKey else null,
             if (truncated) nextVer else null,
+        )
+    }
+
+    private fun parseMultipartUploads(xml: String): MultipartUploadsResult {
+        val out = ArrayList<MultipartUpload>()
+        var truncated = false
+        var nextKey: String? = null
+        var nextUp: String? = null
+
+        var inItem = false
+        var key: String? = null
+        var uploadId: String? = null
+        var initiated: String? = null
+
+        val p = Xml.newPullParser()
+        p.setInput(StringReader(xml))
+        var ev = p.eventType
+        var tag: String? = null
+        while (ev != XmlPullParser.END_DOCUMENT) {
+            when (ev) {
+                XmlPullParser.START_TAG -> {
+                    tag = p.name
+                    if (tag == "Upload") {
+                        inItem = true; key = null; uploadId = null; initiated = null
+                    }
+                }
+                XmlPullParser.TEXT -> {
+                    val t = p.text?.trim().orEmpty()
+                    if (t.isNotEmpty()) when (tag) {
+                        "Key" -> if (inItem) key = t
+                        "UploadId" -> if (inItem) uploadId = t
+                        "Initiated" -> if (inItem) initiated = t
+                        "IsTruncated" -> truncated = t.equals("true", ignoreCase = true)
+                        "NextKeyMarker" -> nextKey = t
+                        "NextUploadIdMarker" -> nextUp = t
+                    }
+                }
+                XmlPullParser.END_TAG -> {
+                    if (p.name == "Upload") {
+                        val k = key
+                        val u = uploadId
+                        if (k != null && u != null) out.add(MultipartUpload(k, u, initiated))
+                        inItem = false
+                    }
+                    tag = null
+                }
+            }
+            ev = p.next()
+        }
+        return MultipartUploadsResult(
+            out,
+            if (truncated) nextKey else null,
+            if (truncated) nextUp else null,
         )
     }
 
