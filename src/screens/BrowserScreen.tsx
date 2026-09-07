@@ -88,9 +88,14 @@ export function BrowserScreen({ navigation }: Props) {
     navigation.setOptions({
       // eslint-disable-next-line react/no-unstable-nested-components
       headerRight: () => (
-        <Pressable onPress={() => navigation.navigate('Profiles')} hitSlop={12}>
-          <Text style={styles.headerBtn}>{t('header.profiles')}</Text>
-        </Pressable>
+        <View style={styles.headerRight}>
+          <Pressable onPress={() => navigation.navigate('Profiles')} hitSlop={12}>
+            <Text style={styles.headerBtn}>{t('header.profiles')}</Text>
+          </Pressable>
+          <Pressable onPress={() => navigation.navigate('Settings')} hitSlop={12}>
+            <Text style={styles.headerGear}>⚙</Text>
+          </Pressable>
+        </View>
       ),
     });
   }, [navigation]);
@@ -1091,7 +1096,9 @@ function queueLabel(s: {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   headerBtn: { color: '#0a84ff', fontSize: 15, fontWeight: '600' },
+  headerGear: { color: '#0a84ff', fontSize: 19 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
   dimText: { textAlign: 'center', opacity: 0.6, fontSize: 14, lineHeight: 20 },
 

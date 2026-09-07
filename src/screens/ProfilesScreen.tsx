@@ -80,7 +80,7 @@ export function ProfilesScreen({ navigation }: Props) {
 
   const addProfile = useCallback(async () => {
     const p = await createProfile(t('profiles.newName'));
-    navigation.navigate('Settings', { profileId: p.id });
+    navigation.navigate('ProfileEdit', { profileId: p.id });
   }, [navigation]);
 
   const confirmDelete = useCallback(
@@ -115,7 +115,7 @@ export function ProfilesScreen({ navigation }: Props) {
         {
           label: t('profiles.edit'),
           onPress: () =>
-            navigation.navigate('Settings', { profileId: menuProfile.id }),
+            navigation.navigate('ProfileEdit', { profileId: menuProfile.id }),
         },
         {
           label: t('profiles.duplicate'),

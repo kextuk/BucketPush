@@ -17,23 +17,37 @@ import type { RootStackParamList } from '../../App';
 import { applyNativeConfig } from '../../App';
 import {
   DEFAULT_CONFIG,
+  DEFAULT_PREFS,
+  PREF_RANGES,
   clearCredentials,
   getActiveProfile,
   getProfile,
   readCredentials,
+  readPrefs,
   saveProfile,
   toNativeConfig,
+  validatePrefs,
   validateProfile,
+  type PrefOverrides,
   type Profile,
+  type TransferPrefs,
 } from '../config';
 import { S3Uploader } from '../native/S3Uploader';
-import { getLangPref, setLangPref, t, type LangPref } from '../i18n';
+import { Field, IntInput, Row } from '../components/SettingsControls';
+import { t } from '../i18n';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
+type Props = NativeStackScreenProps<RootStackParamList, 'ProfileEdit'>;
+
+type NumKey = 'partSizeMiB' | 'maxConcurrentParts' | 'maxConcurrentFiles' | 'moveConcurrency';
+type BoolKey = 'wifiOnly' | 'skipExisting' | 'timestampKeys';
+
+const has = (ov: PrefOverrides, k: keyof TransferPrefs) =>
+  Object.prototype.hasOwnProperty.call(ov, k);
 
 export function SettingsScreen({ navigation, route }: Props) {
   const profileId = route.params?.profileId;
   const [cfg, setCfg] = useState<Profile>(DEFAULT_CONFIG);
+  const [globalPrefs, setGlobalPrefs] = useState<TransferPrefs>(DEFAULT_PREFS);
   const [accessKeyId, setAccessKeyId] = useState('');
   const [secretAccessKey, setSecretAccessKey] = useState('');
   const [testing, setTesting] = useState(false);
@@ -41,11 +55,13 @@ export function SettingsScreen({ navigation, route }: Props) {
 
   useEffect(() => {
     (async () => {
-      const p = (profileId ? await getProfile(profileId) : await getActiveProfile()) ?? {
-        ...DEFAULT_CONFIG,
-        name: t('profiles.newName'),
-      };
-      setCfg(p);
+      const [p0, gp] = await Promise.all([
+        profileId ? getProfile(profileId) : getActiveProfile(),
+        readPrefs(),
+      ]);
+      const p = p0 ?? { ...DEFAULT_CONFIG, name: t('profiles.newName') };
+      setCfg({ ...p, overrides: { ...p.overrides } });
+      setGlobalPrefs(gp);
       const creds = await readCredentials(p.id);
       if (creds) {
         setAccessKeyId(creds.accessKeyId);
@@ -58,8 +74,18 @@ export function SettingsScreen({ navigation, route }: Props) {
   const set = <K extends keyof Profile>(k: K, v: Profile[K]) =>
     setCfg(prev => ({ ...prev, [k]: v }));
 
+  const setOverride = (k: keyof TransferPrefs, v: TransferPrefs[keyof TransferPrefs]) =>
+    setCfg(prev => ({ ...prev, overrides: { ...prev.overrides, [k]: v } }));
+
+  const clearOverride = (k: keyof TransferPrefs) =>
+    setCfg(prev => {
+      const next = { ...prev.overrides };
+      delete next[k];
+      return { ...prev, overrides: next };
+    });
+
   const persist = async (): Promise<boolean> => {
-    const errors = validateProfile(cfg);
+    const errors = [...validateProfile(cfg), ...validatePrefs(cfg.overrides)];
     if (!accessKeyId.trim() || !secretAccessKey.trim()) {
       errors.push('settings.credsRequired');
     }
@@ -72,7 +98,6 @@ export function SettingsScreen({ navigation, route }: Props) {
       secretAccessKey: secretAccessKey.trim(),
     });
     setCfg(prev => ({ ...prev, hasCredentials: true }));
-    // si ce profil est l'actif, pousse sa config au moteur natif
     const active = await getActiveProfile();
     if (active?.id === cfg.id) await applyNativeConfig();
     return true;
@@ -89,7 +114,6 @@ export function SettingsScreen({ navigation, route }: Props) {
     if (!(await persist())) return;
     setTesting(true);
     try {
-      // teste CE profil, puis restaure la config du profil actif
       const native = await toNativeConfig(cfg);
       if (native) await S3Uploader.configure(native);
       const res = await S3Uploader.testConnection();
@@ -114,6 +138,63 @@ export function SettingsScreen({ navigation, route }: Props) {
   };
 
   if (!loaded) return <View style={styles.container} />;
+
+  const fmtGlobal = (k: keyof TransferPrefs): string => {
+    const v = globalPrefs[k];
+    if (k === 'partSizeMiB') return v == null ? t('settings.partAuto') : String(v);
+    if (typeof v === 'boolean') return v ? t('common.yes') : t('common.no');
+    return String(v);
+  };
+
+  const renderInherit = (k: keyof TransferPrefs) => (
+    <View style={styles.inheritRow}>
+      <Text style={styles.inheritTxt}>
+        {has(cfg.overrides, k)
+          ? t('settings.specific')
+          : t('settings.inheritedValue', { v: fmtGlobal(k) })}
+      </Text>
+      <Switch
+        value={has(cfg.overrides, k)}
+        onValueChange={on => {
+          if (on) setOverride(k, globalPrefs[k]);
+          else clearOverride(k);
+        }}
+      />
+    </View>
+  );
+
+  const numRange = (k: NumKey): [number, number] =>
+    k === 'partSizeMiB' ? [5, 1024] : PREF_RANGES[k];
+
+  const renderNum = (k: NumKey, label: string, hint?: string) => {
+    const [min, max] = numRange(k);
+    return (
+      <Field label={label} hint={hint}>
+        {renderInherit(k)}
+        {has(cfg.overrides, k) ? (
+          <IntInput
+            value={cfg.overrides[k]}
+            onChange={v => setOverride(k, k === 'partSizeMiB' ? v : v ?? DEFAULT_PREFS[k])}
+            min={min}
+            max={max}
+            placeholder={k === 'partSizeMiB' ? t('settings.partAuto') : undefined}
+          />
+        ) : null}
+      </Field>
+    );
+  };
+
+  const renderBool = (k: BoolKey, label: string, hint?: string) => (
+    <Field label={label} hint={hint}>
+      {renderInherit(k)}
+      {has(cfg.overrides, k) ? (
+        <View style={styles.inheritRow}>
+          <Text style={styles.inheritTxt}>{t('settings.specificValue')}</Text>
+          <Switch value={!!cfg.overrides[k]} onValueChange={v => setOverride(k, v)} />
+        </View>
+      ) : null}
+    </Field>
+  );
 
   return (
     <KeyboardAvoidingView
@@ -189,40 +270,6 @@ export function SettingsScreen({ navigation, route }: Props) {
           />
         </Row>
 
-        <Row label={t('settings.wifiOnly')}>
-          <Switch value={cfg.wifiOnly} onValueChange={v => set('wifiOnly', v)} />
-        </Row>
-
-        <Row
-          label={t('settings.skipExisting')}
-          hint={t('settings.skipExistingHint')}>
-          <Switch value={cfg.skipExisting} onValueChange={v => set('skipExisting', v)} />
-        </Row>
-
-        <Row label={t('settings.timestampKeys')}>
-          <Switch
-            value={cfg.timestampKeys}
-            onValueChange={v => set('timestampKeys', v)}
-          />
-        </Row>
-
-        <Row label={t('settings.language')}>
-          <View style={styles.langRow}>
-            {(['auto', 'fr', 'en'] as LangPref[]).map(l => (
-              <Pressable
-                key={l}
-                onPress={() => setLangPref(l)}
-                style={[styles.langBtn, getLangPref() === l && styles.langBtnOn]}>
-                <Text style={[styles.langTxt, getLangPref() === l && styles.langTxtOn]}>
-                  {l === 'auto' ? t('settings.langAuto') : l === 'fr' ? 'FR' : 'EN'}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        </Row>
-
-        <Text style={styles.section}>{t('settings.advanced')}</Text>
-
         <Field label={t('settings.region')} hint={t('settings.regionHint')}>
           <TextInput
             style={styles.input}
@@ -234,49 +281,32 @@ export function SettingsScreen({ navigation, route }: Props) {
           />
         </Field>
 
-        <Field label={t('settings.partSize')} hint={t('settings.partSizeHint')}>
-          <TextInput
-            style={styles.input}
-            keyboardType="number-pad"
-            value={cfg.partSizeMiB != null ? String(cfg.partSizeMiB) : ''}
-            onChangeText={v => set('partSizeMiB', v ? Math.max(5, parseInt(v, 10) || 0) : undefined)}
-          />
-        </Field>
+        <Text style={styles.section}>{t('settings.transferSection')}</Text>
+        <Text style={styles.intro}>{t('settings.overrideIntro')}</Text>
 
-        <Field label={t('settings.parallelParts')} hint={t('settings.parallelPartsHint')}>
-          <TextInput
-            style={styles.input}
-            keyboardType="number-pad"
-            value={String(cfg.maxConcurrentParts ?? 2)}
-            onChangeText={v =>
-              set('maxConcurrentParts', Math.min(8, Math.max(1, parseInt(v, 10) || 2)))
-            }
-          />
-        </Field>
-
-        <Field label={t('settings.parallelFiles')} hint={t('settings.parallelFilesHint')}>
-          <TextInput
-            style={styles.input}
-            keyboardType="number-pad"
-            value={String(cfg.maxConcurrentFiles ?? 1)}
-            onChangeText={v =>
-              set('maxConcurrentFiles', Math.min(4, Math.max(1, parseInt(v, 10) || 1)))
-            }
-          />
-        </Field>
-
-        <Field
-          label={t('settings.moveConcurrency')}
-          hint={t('settings.moveConcurrencyHint')}>
-          <TextInput
-            style={styles.input}
-            keyboardType="number-pad"
-            value={String(cfg.moveConcurrency ?? 4)}
-            onChangeText={v =>
-              set('moveConcurrency', Math.min(16, Math.max(1, parseInt(v, 10) || 4)))
-            }
-          />
-        </Field>
+        {renderNum('partSizeMiB', t('settings.partSize'), t('settings.partSizeHint'))}
+        {renderNum(
+          'maxConcurrentParts',
+          t('settings.parallelParts'),
+          t('settings.parallelPartsHint'),
+        )}
+        {renderNum(
+          'maxConcurrentFiles',
+          t('settings.parallelFiles'),
+          t('settings.parallelFilesHint'),
+        )}
+        {renderNum(
+          'moveConcurrency',
+          t('settings.moveConcurrency'),
+          t('settings.moveConcurrencyHint'),
+        )}
+        {renderBool('wifiOnly', t('settings.wifiOnly'))}
+        {renderBool(
+          'skipExisting',
+          t('settings.skipExisting'),
+          t('settings.skipExistingHint'),
+        )}
+        {renderBool('timestampKeys', t('settings.timestampKeys'))}
 
         <View style={styles.actions}>
           <Pressable style={[styles.btn, styles.btnGhost]} onPress={onTest} disabled={testing}>
@@ -297,50 +327,10 @@ export function SettingsScreen({ navigation, route }: Props) {
   );
 }
 
-function Field({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <View style={styles.field}>
-      <Text style={styles.label}>{label}</Text>
-      {children}
-      {hint ? <Text style={styles.hint}>{hint}</Text> : null}
-    </View>
-  );
-}
-
-function Row({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <View style={styles.switchRow}>
-      <View style={styles.switchLabel}>
-        <Text style={styles.label}>{label}</Text>
-        {hint ? <Text style={styles.hint}>{hint}</Text> : null}
-      </View>
-      {children}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { padding: 16, paddingBottom: 48 },
-  field: { marginBottom: 16 },
   label: { fontSize: 13, fontWeight: '600', marginBottom: 6, opacity: 0.8 },
-  hint: { fontSize: 11, opacity: 0.55, marginTop: 4 },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#8888',
@@ -349,15 +339,15 @@ const styles = StyleSheet.create({
     paddingVertical: Platform.OS === 'ios' ? 12 : 8,
     fontSize: 15,
   },
-  switchRow: {
+  section: { fontSize: 15, fontWeight: '700', marginTop: 8, marginBottom: 6 },
+  intro: { fontSize: 12, opacity: 0.6, marginBottom: 16 },
+  inheritRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 16,
     gap: 12,
   },
-  switchLabel: { flex: 1 },
-  section: { fontSize: 15, fontWeight: '700', marginTop: 8, marginBottom: 12 },
+  inheritTxt: { flex: 1, fontSize: 13, opacity: 0.75 },
   actions: { flexDirection: 'row', gap: 12, marginTop: 8 },
   btn: {
     flex: 1,
@@ -371,15 +361,4 @@ const styles = StyleSheet.create({
   btnGhostText: { color: '#0a84ff', fontWeight: '700', fontSize: 15 },
   forget: { marginTop: 24, alignItems: 'center' },
   forgetText: { color: '#c62828', fontSize: 13 },
-  langRow: { flexDirection: 'row', gap: 6 },
-  langBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#0a84ff',
-  },
-  langBtnOn: { backgroundColor: '#0a84ff' },
-  langTxt: { color: '#0a84ff', fontSize: 12, fontWeight: '700' },
-  langTxtOn: { color: '#fff' },
 });

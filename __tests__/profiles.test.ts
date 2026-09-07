@@ -1,7 +1,9 @@
 import {
+  STORE_VERSION,
   blankProfile,
   deriveRegion,
   duplicateMeta,
+  migrateStore,
   nextActiveId,
   pickMeta,
   removeProfile,
@@ -72,6 +74,12 @@ describe('duplicateMeta', () => {
     expect(copy.bucket).toBe('b');
     expect(copy.region).toBe('r');
   });
+  it('copie profonde des overrides (pas de partage de référence)', () => {
+    const src = { ...mk('p1', 'Prod'), overrides: { maxConcurrentParts: 6 } };
+    const copy = duplicateMeta(src, ['Prod']);
+    copy.overrides.maxConcurrentParts = 3;
+    expect(src.overrides.maxConcurrentParts).toBe(6);
+  });
 });
 
 describe('pickMeta', () => {
@@ -81,6 +89,68 @@ describe('pickMeta', () => {
   });
   it('null -> {}', () => {
     expect(pickMeta(null)).toEqual({});
+  });
+  it('replie les anciennes clés de réglage à plat dans overrides', () => {
+    const out = pickMeta({
+      endpoint: 'e',
+      maxConcurrentParts: 6,
+      wifiOnly: true,
+      partSizeMiB: 64,
+    } as never);
+    expect(out).toEqual({
+      endpoint: 'e',
+      overrides: { maxConcurrentParts: 6, wifiOnly: true, partSizeMiB: 64 },
+    });
+  });
+});
+
+describe('migrateStore', () => {
+  it('null / vide -> store v2 vide', () => {
+    expect(migrateStore(null)).toEqual({
+      activeId: null,
+      profiles: [],
+      version: STORE_VERSION,
+    });
+  });
+  it('store v1 (réglages à plat) -> connexion + overrides, tague la version', () => {
+    const v1 = {
+      activeId: 'p1',
+      profiles: [
+        {
+          id: 'p1',
+          name: 'Prod',
+          endpoint: 'https://s3.example.com',
+          bucket: 'b',
+          forcePathStyle: true,
+          keyPrefix: '',
+          maxConcurrentParts: 6,
+          maxConcurrentFiles: 1,
+          moveConcurrency: 4,
+          wifiOnly: true,
+          skipExisting: true,
+          timestampKeys: false,
+          partSizeMiB: 64,
+        },
+      ],
+    } as unknown as ProfileStore;
+    const out = migrateStore(v1);
+    expect(out.version).toBe(STORE_VERSION);
+    expect(out.profiles[0].endpoint).toBe('https://s3.example.com');
+    expect(out.profiles[0]).not.toHaveProperty('maxConcurrentParts');
+    // seules les valeurs ≠ défaut global sont épinglées ; le reste est hérité
+    expect(out.profiles[0].overrides).toEqual({
+      maxConcurrentParts: 6,
+      wifiOnly: true,
+      partSizeMiB: 64,
+    });
+  });
+  it('déjà v2 -> renvoyé tel quel', () => {
+    const v2: ProfileStore = {
+      activeId: null,
+      profiles: [],
+      version: STORE_VERSION,
+    };
+    expect(migrateStore(v2)).toBe(v2);
   });
 });
 
@@ -109,8 +179,5 @@ describe('validateProfile', () => {
     expect(errs).toEqual(
       expect.arrayContaining(['err.name', 'err.endpoint', 'err.bucketInvalid']),
     );
-  });
-  it('part size < 5 MiB rejetée', () => {
-    expect(validateProfile({ ...base, partSizeMiB: 4 })).toContain('err.partSize');
   });
 });

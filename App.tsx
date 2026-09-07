@@ -10,6 +10,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { QueueScreen } from './src/screens/QueueScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
+import { AppSettingsScreen } from './src/screens/AppSettingsScreen';
 import { BrowserScreen } from './src/screens/BrowserScreen';
 import { ProfilesScreen } from './src/screens/ProfilesScreen';
 import { VersionsScreen } from './src/screens/VersionsScreen';
@@ -20,7 +21,8 @@ import { getLang, initLang, onLangChange, t } from './src/i18n';
 export type RootStackParamList = {
   Queue: undefined;
   Profiles: undefined;
-  Settings: { profileId?: string } | undefined;
+  Settings: undefined; // réglages globaux (langue + défauts de transfert)
+  ProfileEdit: { profileId?: string } | undefined; // config d'un profil
   Browser: undefined;
   Versions: { objectKey: string };
 };
@@ -79,8 +81,13 @@ function App(): React.JSX.Element {
           />
           <Stack.Screen
             name="Settings"
-            component={SettingsScreen}
+            component={AppSettingsScreen}
             options={{ title: t('nav.settings') }}
+          />
+          <Stack.Screen
+            name="ProfileEdit"
+            component={SettingsScreen}
+            options={{ title: t('nav.profileEdit') }}
           />
           <Stack.Screen
             name="Versions"

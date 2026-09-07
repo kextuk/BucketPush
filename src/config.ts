@@ -1,10 +1,11 @@
 import * as Keychain from 'react-native-keychain';
 import type { S3Config } from './native/S3Uploader';
 import {
-  PROFILE_DEFAULTS,
+  STORE_VERSION,
   blankProfile,
   deriveRegion,
   duplicateMeta,
+  migrateStore,
   pickMeta,
   removeProfile,
   upsert,
@@ -12,9 +13,25 @@ import {
   type ProfileMeta,
   type ProfileStore,
 } from './profiles';
+import {
+  DEFAULT_PREFS,
+  clampPrefs,
+  resolvePrefs,
+  type PrefOverrides,
+  type TransferPrefs,
+} from './prefs';
 
 export type { ProfileMeta, ProfileStore } from './profiles';
 export { PROFILE_DEFAULTS, deriveRegion, validateProfile } from './profiles';
+export {
+  DEFAULT_PREFS,
+  PREF_RANGES,
+  PREF_KEYS,
+  clampPrefs,
+  resolvePrefs,
+  validatePrefs,
+} from './prefs';
+export type { TransferPrefs, PrefOverrides } from './prefs';
 
 /** Un profil enrichi de l'info « des clés sont stockées ». */
 export type Profile = ProfileMeta & { hasCredentials: boolean };
@@ -23,11 +40,39 @@ export type Profile = ProfileMeta & { hasCredentials: boolean };
 export type AppConfig = Profile;
 
 const STORE_SERVICE = 's3pusher.profiles';
+const PREFS_SERVICE = 's3pusher.prefs';
 const credService = (id: string) => `s3pusher.cred.${id}`;
 
 // Ancien schéma mono-profil (migration).
 const LEGACY_SETTINGS = 's3pusher.settings';
 const LEGACY_CREDS = 's3pusher.credentials';
+
+// --- Réglages de transfert globaux ------------------------------------------
+
+export async function readPrefs(): Promise<TransferPrefs> {
+  try {
+    const s = await Keychain.getGenericPassword({ service: PREFS_SERVICE });
+    if (s && s.password) {
+      return clampPrefs({ ...DEFAULT_PREFS, ...JSON.parse(s.password) });
+    }
+  } catch {
+    /* ignore */
+  }
+  return { ...DEFAULT_PREFS };
+}
+
+export async function savePrefs(prefs: Partial<TransferPrefs>): Promise<TransferPrefs> {
+  const clamped = clampPrefs({ ...DEFAULT_PREFS, ...prefs });
+  await Keychain.setGenericPassword('prefs', JSON.stringify(clamped), {
+    service: PREFS_SERVICE,
+  });
+  return clamped;
+}
+
+/** Prefs effectives d'un profil (global + surcharges du profil). */
+export async function effectivePrefs(overrides: PrefOverrides): Promise<TransferPrefs> {
+  return resolvePrefs(await readPrefs(), overrides);
+}
 
 // --- I/O trousseau -------------------------------------------------------------
 
@@ -42,9 +87,11 @@ async function readStoreRaw(): Promise<ProfileStore | null> {
 }
 
 async function writeStore(store: ProfileStore): Promise<void> {
-  await Keychain.setGenericPassword('profiles', JSON.stringify(store), {
-    service: STORE_SERVICE,
-  });
+  await Keychain.setGenericPassword(
+    'profiles',
+    JSON.stringify({ ...store, version: STORE_VERSION }),
+    { service: STORE_SERVICE },
+  );
 }
 
 async function migrateLegacy(): Promise<ProfileStore | null> {
@@ -59,7 +106,7 @@ async function migrateLegacy(): Promise<ProfileStore | null> {
 
   const p: ProfileMeta = { ...blankProfile('Profil 1'), ...pickMeta(legacy) };
   p.name = 'Profil 1';
-  const store: ProfileStore = { activeId: p.id, profiles: [p] };
+  const store: ProfileStore = { activeId: p.id, profiles: [p], version: STORE_VERSION };
 
   try {
     const c = await Keychain.getGenericPassword({ service: LEGACY_CREDS });
@@ -82,10 +129,12 @@ async function migrateLegacy(): Promise<ProfileStore | null> {
 }
 
 async function getStore(): Promise<ProfileStore> {
-  return (
-    (await readStoreRaw()) ??
-    (await migrateLegacy()) ?? { activeId: null, profiles: [] }
-  );
+  const raw = (await readStoreRaw()) ?? (await migrateLegacy());
+  if (!raw) return { activeId: null, profiles: [], version: STORE_VERSION };
+  if (raw.version === STORE_VERSION) return raw;
+  const migrated = migrateStore(raw); // v1 (réglages à plat) → connexion + overrides
+  await writeStore(migrated);
+  return migrated;
 }
 
 // --- Credentials -------------------------------------------------------------
@@ -210,10 +259,11 @@ export const DEFAULT_CONFIG: Profile = {
   hasCredentials: false,
 };
 
-/** Config native (secrets inclus) à passer à `S3Uploader.configure`. */
+/** Config native (secrets + réglages effectifs) à passer à `S3Uploader.configure`. */
 export async function toNativeConfig(cfg: Profile): Promise<S3Config | null> {
   const creds = await readCredentials(cfg.id);
   if (!creds) return null;
+  const prefs = await effectivePrefs(cfg.overrides ?? {});
   return {
     endpoint: cfg.endpoint.trim(),
     region: deriveRegion(cfg.endpoint, cfg.region),
@@ -221,12 +271,14 @@ export async function toNativeConfig(cfg: Profile): Promise<S3Config | null> {
     accessKeyId: creds.accessKeyId,
     secretAccessKey: creds.secretAccessKey,
     forcePathStyle: cfg.forcePathStyle,
-    partSizeBytes: cfg.partSizeMiB ? Math.round(cfg.partSizeMiB * 1024 * 1024) : undefined,
-    maxConcurrentParts: cfg.maxConcurrentParts ?? PROFILE_DEFAULTS.maxConcurrentParts,
-    maxConcurrentFiles: cfg.maxConcurrentFiles ?? PROFILE_DEFAULTS.maxConcurrentFiles,
-    wifiOnly: cfg.wifiOnly,
-    skipExisting: cfg.skipExisting,
-    moveConcurrency: cfg.moveConcurrency ?? PROFILE_DEFAULTS.moveConcurrency,
+    partSizeBytes: prefs.partSizeMiB
+      ? Math.round(prefs.partSizeMiB * 1024 * 1024)
+      : undefined,
+    maxConcurrentParts: prefs.maxConcurrentParts,
+    maxConcurrentFiles: prefs.maxConcurrentFiles,
+    wifiOnly: prefs.wifiOnly,
+    skipExisting: prefs.skipExisting,
+    moveConcurrency: prefs.moveConcurrency,
   };
 }
 
