@@ -314,6 +314,32 @@ const DICT: Record<Lang, Record<string, string>> = {
     'ver.purgeBody': '{n} version(s) non courante(s) seront supprimées.',
     'ver.purgeBtn': 'Purger {n} ancienne(s) version(s)',
     'ver.restore': 'Restaurer',
+
+    'about.button': 'À propos',
+    'about.title': 'À propos de BucketPush',
+    'about.what':
+      'BucketPush est un navigateur pour serveurs S3 (et compatibles) conçu pour transférer de très gros fichiers. Les envois et téléchargements se font par morceaux (multipart), lus directement depuis le stockage sans passer par la mémoire : l’usage RAM reste de quelques Mo quelle que soit la taille ou le nombre de fichiers, l’app ne sature pas et ne crashe pas. Les transferts continuent en arrière-plan et reprennent après une coupure réseau.',
+    'about.oss':
+      'Projet gratuit et open source. Aucune publicité, aucun pistage, aucun compte.',
+    'about.privacy':
+      'Respectueux de tes données : tes clés d’accès sont chiffrées et stockées uniquement sur l’appareil, et rien n’est envoyé ailleurs que vers le serveur S3 que tu configures.',
+    'about.permsTitle': 'Autorisations',
+    'about.permNetwork': 'Réseau (Internet / état du réseau)',
+    'about.permNetworkWhy':
+      'Communiquer avec ton serveur S3, et distinguer Wi-Fi / données mobiles pour l’option « Wi-Fi uniquement ».',
+    'about.permNotif': 'Notifications',
+    'about.permNotifWhy':
+      'Afficher la progression du transfert en cours. Android l’impose pour tout traitement long en arrière-plan.',
+    'about.permBackground':
+      'Arrière-plan (service de premier plan, veille, redémarrage)',
+    'about.permBackgroundWhy':
+      'Poursuivre un gros transfert écran éteint ou app fermée, empêcher la mise en veille pendant le transfert, et reprendre les transferts en attente après un redémarrage du téléphone.',
+    'about.permNearby': 'Appareils à proximité / réseau local',
+    'about.permNearbyWhy':
+      'Présent uniquement dans la version de développement, pour connecter l’app au serveur de développement sur le réseau local. Absent de la version publiée. Aucune fonction Bluetooth ni partage à proximité.',
+    'about.permBiometric': 'Biométrie',
+    'about.permBiometricWhy':
+      'Déclarée par le composant de stockage sécurisé des clés. Utilisée seulement si tu choisis de protéger l’accès par empreinte ou reconnaissance faciale.',
   },
   en: {
     'nav.browser': 'BucketPush',
@@ -556,6 +582,31 @@ const DICT: Record<Lang, Record<string, string>> = {
     'ver.purgeBody': '{n} non-current version(s) will be deleted.',
     'ver.purgeBtn': 'Purge {n} old version(s)',
     'ver.restore': 'Restore',
+
+    'about.button': 'About',
+    'about.title': 'About BucketPush',
+    'about.what':
+      'BucketPush is a browser for S3 (and S3-compatible) servers built to move very large files. Uploads and downloads run in chunks (multipart), streamed straight from storage without going through memory: RAM use stays a few MB whatever the size or number of files, so the app never chokes or crashes. Transfers keep running in the background and resume after a network drop.',
+    'about.oss':
+      'Free and open-source project. No ads, no tracking, no account.',
+    'about.privacy':
+      'Respectful of your data: your access keys are encrypted and stored on the device only, and nothing is sent anywhere except the S3 server you configure.',
+    'about.permsTitle': 'Permissions',
+    'about.permNetwork': 'Network (Internet / network state)',
+    'about.permNetworkWhy':
+      'Talk to your S3 server, and tell Wi-Fi from mobile data for the “Wi-Fi only” option.',
+    'about.permNotif': 'Notifications',
+    'about.permNotifWhy':
+      'Show the progress of the running transfer. Android requires it for any long background work.',
+    'about.permBackground': 'Background (foreground service, wake lock, boot)',
+    'about.permBackgroundWhy':
+      'Keep a large transfer going with the screen off or the app closed, prevent sleep during a transfer, and resume pending transfers after the phone reboots.',
+    'about.permNearby': 'Nearby devices / local network',
+    'about.permNearbyWhy':
+      'Present only in the development build, to connect the app to the local dev server. Not in the published app. No Bluetooth or nearby-sharing feature.',
+    'about.permBiometric': 'Biometrics',
+    'about.permBiometricWhy':
+      'Declared by the secure key-storage component. Used only if you choose to protect access with fingerprint or face unlock.',
   },
 };
 
