@@ -27,6 +27,7 @@ import {
   controlStyles,
 } from '../components/SettingsControls';
 import { AboutModal } from '../components/AboutModal';
+import { ProvidersModal } from '../components/ProvidersModal';
 import { getLangPref, setLangPref, t, useLang, type LangPref } from '../i18n';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
@@ -36,6 +37,7 @@ export function AppSettingsScreen({ navigation }: Props) {
   const [prefs, setPrefs] = useState<TransferPrefs>(DEFAULT_PREFS);
   const [loaded, setLoaded] = useState(false);
   const [about, setAbout] = useState(false);
+  const [providers, setProviders] = useState(false);
 
   useEffect(() => {
     readPrefs().then(p => {
@@ -147,8 +149,14 @@ export function AppSettingsScreen({ navigation }: Props) {
       <Pressable style={styles.aboutBtn} onPress={() => setAbout(true)}>
         <Text style={styles.aboutTxt}>{t('about.button')}</Text>
       </Pressable>
+      <Pressable
+        style={[styles.aboutBtn, styles.aboutBtnSpaced]}
+        onPress={() => setProviders(true)}>
+        <Text style={styles.aboutTxt}>{t('providers.button')}</Text>
+      </Pressable>
 
       <AboutModal visible={about} onClose={() => setAbout(false)} />
+      <ProvidersModal visible={providers} onClose={() => setProviders(false)} />
     </ScrollView>
   );
 }
@@ -174,6 +182,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     alignItems: 'center',
   },
+  aboutBtnSpaced: { marginTop: 10 },
   aboutTxt: { color: '#0a84ff', fontWeight: '700', fontSize: 15 },
   langRow: { flexDirection: 'row', gap: 6 },
   langBtn: {

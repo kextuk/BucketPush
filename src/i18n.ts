@@ -335,6 +335,32 @@ const DICT: Record<Lang, Record<string, string>> = {
       'Arrière-plan (service de premier plan, veille, redémarrage)',
     'about.permBackgroundWhy':
       'Poursuivre un gros transfert écran éteint ou app fermée, empêcher la mise en veille pendant le transfert, et reprendre les transferts en attente après un redémarrage du téléphone.',
+
+    'providers.button': 'Fournisseurs S3',
+    'providers.title': 'Fournisseurs S3 compatibles',
+    'providers.intro':
+      'Offres indicatives (janvier 2026) — vérifie toujours sur le site du fournisseur, ça change souvent. Appuie sur un nom pour ouvrir le site.',
+    'providers.referral': 'parrainage',
+    'providers.referralNote':
+      'Parrainage : Scaleway, Storj et IDrive proposent des crédits (pour toi et le filleul). Backblaze B2, Cloudflare R2, Wasabi et AWS n’ont pas de parrainage grand public.',
+    'providers.note.b2':
+      '10 Go gratuits à vie, 1 Go/jour de téléchargement gratuit. Pas de limite de durée. (Fournisseur utilisé par défaut ici.)',
+    'providers.note.r2':
+      '10 Go-mois gratuits à vie, et surtout aucun frais de sortie (egress). Idéal si tu télécharges beaucoup.',
+    'providers.note.scaleway':
+      '75 Go de stockage + 75 Go/mois de sortie gratuits, à vie. Datacenters en Europe (FR/NL/PL).',
+    'providers.note.storj':
+      '25 Go de stockage + 25 Go/mois de sortie gratuits. Stockage distribué, passerelle S3.',
+    'providers.note.tebi':
+      '25 Go gratuits, aucun frais de sortie. S3 + FTP.',
+    'providers.note.idrive':
+      '10 Go gratuits. Tarif au To parmi les plus bas du marché.',
+    'providers.note.wasabi':
+      'Essai gratuit 30 jours (jusqu’à 1 To). Pas d’offre gratuite permanente ; facturation minimale 1 To et rétention 90 jours.',
+    'providers.note.aws':
+      '5 Go gratuits pendant 12 mois pour les nouveaux comptes seulement. L’implémentation de référence.',
+    'providers.note.minio':
+      'Open source et gratuit, mais à héberger toi-même (serveur, NAS…).',
   },
   en: {
     'nav.browser': 'BucketPush',
@@ -597,6 +623,32 @@ const DICT: Record<Lang, Record<string, string>> = {
     'about.permBackground': 'Background (foreground service, wake lock, boot)',
     'about.permBackgroundWhy':
       'Keep a large transfer going with the screen off or the app closed, prevent sleep during a transfer, and resume pending transfers after the phone reboots.',
+
+    'providers.button': 'S3 providers',
+    'providers.title': 'S3-compatible providers',
+    'providers.intro':
+      'Indicative offers (January 2026) — always check the provider’s site, they change often. Tap a name to open the site.',
+    'providers.referral': 'referral',
+    'providers.referralNote':
+      'Referrals: Scaleway, Storj and IDrive give credits (to you and the referee). Backblaze B2, Cloudflare R2, Wasabi and AWS have no consumer referral scheme.',
+    'providers.note.b2':
+      '10 GB free forever, 1 GB/day free download. No time limit. (Default provider used here.)',
+    'providers.note.r2':
+      '10 GB-month free forever, and crucially no egress fees. Great if you download a lot.',
+    'providers.note.scaleway':
+      '75 GB storage + 75 GB/month egress free, forever. Datacenters in Europe (FR/NL/PL).',
+    'providers.note.storj':
+      '25 GB storage + 25 GB/month egress free. Distributed storage, S3 gateway.',
+    'providers.note.tebi':
+      '25 GB free, no egress fees. S3 + FTP.',
+    'providers.note.idrive':
+      '10 GB free. Among the lowest per-TB pricing around.',
+    'providers.note.wasabi':
+      '30-day free trial (up to 1 TB). No permanent free tier; 1 TB minimum billing and 90-day retention.',
+    'providers.note.aws':
+      '5 GB free for 12 months, new accounts only. The reference implementation.',
+    'providers.note.minio':
+      'Open source and free, but you host it yourself (server, NAS…).',
   },
 };
 
