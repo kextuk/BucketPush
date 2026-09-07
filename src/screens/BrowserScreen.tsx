@@ -463,6 +463,20 @@ export function BrowserScreen({ navigation }: Props) {
     );
   };
 
+  const reportPurge = (res: { deleted: number; failed: number; errors: string[] }) => {
+    if (res.failed) {
+      Alert.alert(
+        t('op.withErrors'),
+        t('purge.doneN', { n: res.deleted }) +
+          '\n' +
+          t('purge.failedN', { n: res.failed }) +
+          (res.errors.length ? '\n\n' + res.errors.slice(0, 5).join('\n') : ''),
+      );
+    } else {
+      Alert.alert(t('common.done'), t('purge.doneN', { n: res.deleted }));
+    }
+  };
+
   const purgeSelected = () => {
     Alert.alert(
       t('purge.filesQ', { n: selected.length }),
@@ -475,8 +489,7 @@ export function BrowserScreen({ navigation }: Props) {
           onPress: async () => {
             setOp({ label: t('op.purgeDef'), done: 0, total: 0 });
             try {
-              const { deleted } = await S3Uploader.purgeKeys(selected);
-              Alert.alert(t('common.done'), t('purge.doneN', { n: deleted }));
+              reportPurge(await S3Uploader.purgeKeys(selected));
             } catch (e: any) {
               Alert.alert(t('common.failure'), String(e?.message ?? e));
             } finally {
@@ -653,6 +666,33 @@ export function BrowserScreen({ navigation }: Props) {
     );
   };
 
+  const purgeFolder = (folderPrefix: string) => {
+    Alert.alert(
+      t('folder.purgeAllQ'),
+      t('folder.purgeAllBody', { prefix: folderPrefix }),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('purge.btn'),
+          style: 'destructive',
+          onPress: async () => {
+            setOp({ label: t('op.purgeDef'), done: 0, total: 0 });
+            try {
+              const res = await S3Uploader.purgePrefix(folderPrefix);
+              reload();
+              reportPurge(res);
+            } catch (e: any) {
+              Alert.alert(t('common.failure'), String(e?.message ?? e));
+            } finally {
+              setOp(null);
+            }
+          },
+        },
+      ],
+      { cancelable: true },
+    );
+  };
+
   const restoreFolder = async (folderPrefix: string) => {
     setOp({ label: t('op.restoring'), done: 0, total: 0 });
     try {
@@ -690,9 +730,9 @@ export function BrowserScreen({ navigation }: Props) {
           onPress: async () => {
             setOp({ label: t('op.purgeVersions'), done: 0, total: 0 });
             try {
-              const { deleted } = await S3Uploader.purgeOldVersions(scopePrefix);
+              const res = await S3Uploader.purgeOldVersions(scopePrefix);
               reload();
-              Alert.alert(t('purge.done'), t('purge.doneN', { n: deleted }));
+              reportPurge(res);
             } catch (e: any) {
               Alert.alert(t('common.failure'), String(e?.message ?? e));
             } finally {
@@ -1081,6 +1121,11 @@ export function BrowserScreen({ navigation }: Props) {
                   label: t('folder.deleteWithContent'),
                   destructive: true,
                   onPress: () => deleteFolder(folderMenu.prefix),
+                },
+                {
+                  label: t('folder.purgeAll'),
+                  destructive: true,
+                  onPress: () => purgeFolder(folderMenu.prefix),
                 },
               ]
             : []

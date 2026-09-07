@@ -155,6 +155,7 @@ const DICT: Record<Lang, Record<string, string>> = {
     'purge.warn': 'Toutes les versions ET les marqueurs seront supprimés. Irréversible.',
     'purge.btn': 'Supprimer déf.',
     'purge.doneN': '{n} version(s) supprimée(s).',
+    'purge.failedN': '{n} en échec (voir détails).',
     'restore.doneN': '{n} fichier(s) restauré(s).',
     'restored': 'Restauré',
     'downloaded': 'Téléchargé',
@@ -187,6 +188,10 @@ const DICT: Record<Lang, Record<string, string>> = {
     'folder.deleteQ': 'Supprimer ce dossier ?',
     'folder.deleteBody': '{prefix}\nTout son contenu sera supprimé (récupérable jusqu’à purge).',
     'folder.deletedN': '{n} objet(s).',
+    'folder.purgeAll': 'Supprimer définitivement (dossier + toutes versions)',
+    'folder.purgeAllQ': 'Supprimer définitivement ce dossier ?',
+    'folder.purgeAllBody':
+      '{prefix}\nToutes les versions ET les marqueurs de suppression sous ce dossier seront effacés. Irréversible.',
 
     'tools.title': 'Outils',
     'tools.sizeHere': 'Taille de ce dossier',
@@ -211,6 +216,10 @@ const DICT: Record<Lang, Record<string, string>> = {
     'queue.pause': 'Pause',
     'queue.resume': 'Reprendre',
     'queue.clean': 'Nettoyer',
+    'queue.cancelAll': 'Annuler tout',
+    'queue.cancelAllQ': 'Annuler tous les transferts en attente ?',
+    'queue.cancelAllBody':
+      'Les transferts en cours et en file seront annulés (leurs parties déjà envoyées sont abandonnées côté serveur). Les fichiers déjà transférés ne sont pas touchés.',
     'queue.empty': 'Rien dans la file. Ajoute des fichiers depuis le navigateur.',
     'queue.cancelUpload': 'Annuler l’upload',
     'queue.forceUpload': 'Forcer l’upload (écrase)',
@@ -441,6 +450,7 @@ const DICT: Record<Lang, Record<string, string>> = {
     'purge.warn': 'Every version AND marker will be removed. Irreversible.',
     'purge.btn': 'Delete perm.',
     'purge.doneN': '{n} version(s) deleted.',
+    'purge.failedN': '{n} failed (see details).',
     'restore.doneN': '{n} file(s) restored.',
     'restored': 'Restored',
     'downloaded': 'Downloaded',
@@ -473,6 +483,10 @@ const DICT: Record<Lang, Record<string, string>> = {
     'folder.deleteQ': 'Delete this folder?',
     'folder.deleteBody': '{prefix}\nAll its contents will be deleted (recoverable until purged).',
     'folder.deletedN': '{n} object(s).',
+    'folder.purgeAll': 'Delete permanently (folder + all versions)',
+    'folder.purgeAllQ': 'Permanently delete this folder?',
+    'folder.purgeAllBody':
+      '{prefix}\nEvery version AND delete marker under this folder will be erased. Irreversible.',
 
     'tools.title': 'Tools',
     'tools.sizeHere': 'Size of this folder',
@@ -497,6 +511,10 @@ const DICT: Record<Lang, Record<string, string>> = {
     'queue.pause': 'Pause',
     'queue.resume': 'Resume',
     'queue.clean': 'Clear',
+    'queue.cancelAll': 'Cancel all',
+    'queue.cancelAllQ': 'Cancel all pending transfers?',
+    'queue.cancelAllBody':
+      'Running and queued transfers will be canceled (their already-uploaded parts are abandoned server-side). Already-transferred files are left untouched.',
     'queue.empty': 'Queue is empty. Add files from the browser.',
     'queue.cancelUpload': 'Cancel upload',
     'queue.forceUpload': 'Force upload (overwrite)',

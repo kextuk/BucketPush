@@ -123,6 +123,7 @@ export type DownloadProgressEvent = {
 
 export type MovePair = { src: string; dst: string };
 export type MoveResult = { moved: number; failed: number; errors: string[] };
+export type PurgeResult = { deleted: number; failed: number; errors: string[] };
 export type MoveProgressEvent = {
   filesDone: number;
   filesTotal: number;
@@ -192,15 +193,19 @@ export const S3Uploader = {
     return S3UploaderNative.deleteVersion(key, versionId);
   },
   /** Supprime définitivement toutes les versions + marqueurs des clés. */
-  purgeKeys(keys: string[]): Promise<{ deleted: number }> {
+  purgeKeys(keys: string[]): Promise<PurgeResult> {
     return S3UploaderNative.purgeKeys(keys);
+  },
+  /** Supprime tout sous un préfixe : chaque version et chaque marqueur de suppression. */
+  purgePrefix(prefix: string): Promise<PurgeResult> {
+    return S3UploaderNative.purgePrefix(prefix);
   },
   /** Restaure des objets « supprimés » (retire les delete markers de tête). */
   restoreKeys(keys: string[]): Promise<{ restored: number }> {
     return S3UploaderNative.restoreKeys(keys);
   },
   /** Supprime toutes les versions non-courantes sous un préfixe. */
-  purgeOldVersions(prefix: string): Promise<{ deleted: number }> {
+  purgeOldVersions(prefix: string): Promise<PurgeResult> {
     return S3UploaderNative.purgeOldVersions(prefix);
   },
   createFolder(prefix: string, name: string): Promise<void> {
@@ -229,6 +234,10 @@ export const S3Uploader = {
   },
   cancel(id: string): Promise<void> {
     return S3UploaderNative.cancel(id);
+  },
+  /** Annule tous les transferts en attente (queued / uploading / paused). */
+  cancelAll(): Promise<{ canceled: number }> {
+    return S3UploaderNative.cancelAll();
   },
   retry(id: string): Promise<void> {
     return S3UploaderNative.retry(id);

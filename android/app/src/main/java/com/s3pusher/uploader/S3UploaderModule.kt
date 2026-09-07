@@ -394,39 +394,81 @@ class S3UploaderModule(private val reactContext: ReactApplicationContext) :
         }
     }
 
-    /** Supprime **toutes** les versions (et marqueurs) des clés données. Résout `{ deleted }`. */
+    /** Supprime chaque (clé, versionId) en parallèle. Renvoie (ok, échecs, messages). */
+    private suspend fun deleteVersionsBulk(
+        s3: S3Client,
+        targets: List<Pair<String, String>>,
+    ): Triple<Int, Int, List<String>> {
+        val ok = java.util.concurrent.atomic.AtomicInteger(0)
+        val errs = java.util.Collections.synchronizedList(ArrayList<String>())
+        kotlinx.coroutines.coroutineScope {
+            val sem = kotlinx.coroutines.sync.Semaphore(8)
+            targets.forEach { (k, v) ->
+                launch(Dispatchers.IO) {
+                    sem.acquire()
+                    try {
+                        s3.deleteVersion(k, v)
+                        ok.incrementAndGet()
+                    } catch (e: Exception) {
+                        errs.add("$k : ${e.message ?: e.javaClass.simpleName}")
+                    } finally {
+                        sem.release()
+                    }
+                }
+            }
+        }
+        return Triple(ok.get(), errs.size, errs.toList())
+    }
+
+    private fun purgeResult(t: Triple<Int, Int, List<String>>): WritableMap =
+        Arguments.createMap().apply {
+            putInt("deleted", t.first)
+            putInt("failed", t.second)
+            putArray("errors", Arguments.createArray().apply {
+                t.third.take(20).forEach { pushString(it) }
+            })
+        }
+
+    /** Énumère toutes les versions sous `prefix` ; `onlyOld` = ignore les versions courantes. */
+    private suspend fun collectVersions(
+        s3: S3Client,
+        prefix: String,
+        onlyOld: Boolean,
+        keyEquals: String? = null,
+    ): List<Pair<String, String>> {
+        val out = ArrayList<Pair<String, String>>()
+        var km: String? = null
+        var vm: String? = null
+        do {
+            val res = s3.listObjectVersions(prefix, km, vm, delimiter = "")
+            res.versions.forEach { v ->
+                if (keyEquals != null && v.key != keyEquals) return@forEach
+                if (onlyOld && v.isLatest) return@forEach
+                out.add(v.key to v.versionId)
+            }
+            km = res.nextKeyMarker
+            vm = res.nextVersionIdMarker
+        } while (km != null || vm != null)
+        return out
+    }
+
+    /** Supprime **toutes** les versions (et marqueurs) des clés données. Résout `{ deleted, failed, errors }`. */
     @ReactMethod
     fun purgeKeys(keys: ReadableArray, promise: Promise) {
         val list = (0 until keys.size()).mapNotNull { keys.getString(it) }
         withS3(promise) { s3, _ ->
-            val deleted = java.util.concurrent.atomic.AtomicInteger(0)
-            kotlinx.coroutines.coroutineScope {
-                val sem = kotlinx.coroutines.sync.Semaphore(6)
-                list.forEach { k ->
-                    launch(Dispatchers.IO) {
-                        sem.acquire()
-                        try {
-                            var km: String? = null
-                            var vm: String? = null
-                            do {
-                                val res = s3.listObjectVersions(k, km, vm, delimiter = "")
-                                res.versions.filter { it.key == k }.forEach { v ->
-                                    try {
-                                        s3.deleteVersion(k, v.versionId)
-                                        deleted.incrementAndGet()
-                                    } catch (_: Exception) {
-                                    }
-                                }
-                                km = res.nextKeyMarker
-                                vm = res.nextVersionIdMarker
-                            } while (km != null || vm != null)
-                        } finally {
-                            sem.release()
-                        }
-                    }
-                }
-            }
-            promise.resolve(Arguments.createMap().apply { putInt("deleted", deleted.get()) })
+            val targets = ArrayList<Pair<String, String>>()
+            list.forEach { k -> targets.addAll(collectVersions(s3, k, onlyOld = false, keyEquals = k)) }
+            promise.resolve(purgeResult(deleteVersionsBulk(s3, targets)))
+        }
+    }
+
+    /** Supprime **tout** sous un préfixe : chaque version et chaque marqueur. Résout `{ deleted, failed, errors }`. */
+    @ReactMethod
+    fun purgePrefix(prefix: String, promise: Promise) {
+        withS3(promise) { s3, _ ->
+            val targets = collectVersions(s3, prefix, onlyOld = false)
+            promise.resolve(purgeResult(deleteVersionsBulk(s3, targets)))
         }
     }
 
@@ -463,37 +505,12 @@ class S3UploaderModule(private val reactContext: ReactApplicationContext) :
         }
     }
 
-    /** Supprime toutes les versions non-courantes sous un préfixe. Résout `{ deleted }`. */
+    /** Supprime toutes les versions non-courantes sous un préfixe. Résout `{ deleted, failed, errors }`. */
     @ReactMethod
     fun purgeOldVersions(prefix: String, promise: Promise) {
         withS3(promise) { s3, _ ->
-            val toDelete = ArrayList<Pair<String, String>>()
-            var km: String? = null
-            var vm: String? = null
-            do {
-                val res = s3.listObjectVersions(prefix, km, vm, delimiter = "")
-                res.versions.forEach { if (!it.isLatest) toDelete.add(it.key to it.versionId) }
-                km = res.nextKeyMarker
-                vm = res.nextVersionIdMarker
-            } while (km != null || vm != null)
-
-            val deleted = java.util.concurrent.atomic.AtomicInteger(0)
-            kotlinx.coroutines.coroutineScope {
-                val sem = kotlinx.coroutines.sync.Semaphore(8)
-                toDelete.forEach { (k, v) ->
-                    launch(kotlinx.coroutines.Dispatchers.IO) {
-                        sem.acquire()
-                        try {
-                            s3.deleteVersion(k, v)
-                            deleted.incrementAndGet()
-                        } catch (_: Exception) {
-                        } finally {
-                            sem.release()
-                        }
-                    }
-                }
-            }
-            promise.resolve(Arguments.createMap().apply { putInt("deleted", deleted.get()) })
+            val targets = collectVersions(s3, prefix, onlyOld = true)
+            promise.resolve(purgeResult(deleteVersionsBulk(s3, targets)))
         }
     }
 
@@ -726,6 +743,41 @@ class S3UploaderModule(private val reactContext: ReactApplicationContext) :
                 }
             }
             promise.resolve(null)
+        }
+    }
+
+    /** Annule tous les transferts en attente (queued / uploading / paused). Résout `{ canceled }`. */
+    @ReactMethod
+    fun cancelAll(promise: Promise) {
+        UploadController.pause()
+        UploadQueueWorker.cancel(reactContext) // stoppe le service de premier plan
+        scope.launch {
+            try {
+                val pending = db.allItems().filter {
+                    it.status == Status.QUEUED ||
+                        it.status == Status.UPLOADING ||
+                        it.status == Status.PAUSED
+                }
+                val cfg = CredentialStore(reactContext).load()
+                for (item in pending) {
+                    UploadController.cancel(item.id)
+                    if (cfg != null && item.uploadId != null) {
+                        try {
+                            S3Client(cfg).abortMultipartUpload(item.key, item.uploadId)
+                        } catch (_: Exception) {
+                        }
+                    }
+                    db.deletePartsFor(item.id)
+                    db.setStatus(item.id, Status.CANCELED)
+                    UploadController.clearCanceled(item.id)
+                    UploadEvents.itemStatus(item.id, Status.CANCELED, null)
+                }
+                UploadController.resume() // file vide : on lève le flag de pause
+                UploadEvents.queueStatus("idle", 0)
+                promise.resolve(Arguments.createMap().apply { putInt("canceled", pending.size) })
+            } catch (e: Exception) {
+                promise.reject("cancel_all_failed", e.message, e)
+            }
         }
     }
 

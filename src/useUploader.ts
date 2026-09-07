@@ -130,6 +130,10 @@ export function useUploader() {
     pause: () => S3Uploader.pause(),
     resume: () => S3Uploader.resume(),
     cancel: (id: string) => S3Uploader.cancel(id),
+    cancelAll: async () => {
+      await S3Uploader.cancelAll();
+      hydrate();
+    },
     retry: (id: string) => S3Uploader.retry(id),
     clearCompleted: async () => {
       await S3Uploader.clearCompleted();

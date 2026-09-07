@@ -1,4 +1,4 @@
-import React, { useCallback, useLayoutEffect, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -19,11 +19,41 @@ import { formatBytes, formatEta, formatSpeed, percent } from '../format';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Queue'>;
 
+// Ordre d'affichage : transférés en haut, puis en cours, puis en attente, annulés en bas.
+const GROUP: Record<string, number> = {
+  completed: 0,
+  skipped: 0,
+  uploading: 1,
+  queued: 2,
+  paused: 2,
+  failed: 3,
+  canceled: 4,
+};
+const PENDING_STATUS = ['queued', 'uploading', 'paused'];
+
 export function QueueScreen({ navigation }: Props) {
   const lang = useLang();
-  const { items, queueStatus, hydrate, pause, resume, cancel, retry, clearCompleted } =
-    useUploader();
+  const {
+    items,
+    queueStatus,
+    summary,
+    hydrate,
+    pause,
+    resume,
+    cancel,
+    cancelAll,
+    retry,
+    clearCompleted,
+  } = useUploader();
   const [profileName, setProfileName] = useState('');
+
+  const sorted = useMemo(
+    () =>
+      [...items].sort(
+        (a, b) => (GROUP[a.status] ?? 9) - (GROUP[b.status] ?? 9),
+      ),
+    [items],
+  );
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -76,6 +106,18 @@ export function QueueScreen({ navigation }: Props) {
   );
 
   const anyActive = items.some(i => i.status === 'uploading' || i.status === 'queued');
+  const anyPending = items.some(i => PENDING_STATUS.includes(i.status));
+
+  const confirmCancelAll = () =>
+    Alert.alert(
+      t('queue.cancelAllQ'),
+      t('queue.cancelAllBody'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        { text: t('queue.cancelAll'), style: 'destructive', onPress: () => cancelAll() },
+      ],
+      { cancelable: true },
+    );
 
   return (
     <View style={styles.container}>
@@ -84,6 +126,7 @@ export function QueueScreen({ navigation }: Props) {
           <Text style={styles.status}>
             {profileName ? `${profileName} · ` : ''}
             {labelForQueue(queueStatus)}
+            {summary.speedBps > 0 ? ` · ${formatSpeed(summary.speedBps)}` : ''}
           </Text>
         </Pressable>
         <View style={styles.toolbarBtns}>
@@ -96,6 +139,11 @@ export function QueueScreen({ navigation }: Props) {
               <Text style={styles.btnText}>{t('queue.resume')}</Text>
             </Pressable>
           )}
+          {anyPending ? (
+            <Pressable style={[styles.btn, styles.btnDanger]} onPress={confirmCancelAll}>
+              <Text style={styles.btnText}>{t('queue.cancelAll')}</Text>
+            </Pressable>
+          ) : null}
           <Pressable style={styles.btn} onPress={clearCompleted}>
             <Text style={styles.btnText}>{t('queue.clean')}</Text>
           </Pressable>
@@ -103,7 +151,7 @@ export function QueueScreen({ navigation }: Props) {
       </View>
 
       <FlatList
-        data={items}
+        data={sorted}
         keyExtractor={i => i.id}
         contentContainerStyle={items.length ? styles.listPad : styles.emptyWrap}
         refreshControl={<RefreshControl refreshing={false} onRefresh={hydrate} />}
@@ -186,6 +234,7 @@ const styles = StyleSheet.create({
   status: { fontSize: 13, opacity: 0.7 },
   toolbarBtns: { flexDirection: 'row', gap: 8 },
   btn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: '#0a84ff' },
+  btnDanger: { backgroundColor: '#c62828' },
   btnText: { color: '#fff', fontWeight: '600', fontSize: 13 },
   listPad: { paddingBottom: 24 },
   emptyWrap: { flexGrow: 1, alignItems: 'center', justifyContent: 'center' },
