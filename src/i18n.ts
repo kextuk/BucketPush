@@ -339,25 +339,25 @@ const DICT: Record<Lang, Record<string, string>> = {
     'providers.button': 'Fournisseurs S3',
     'providers.title': 'Fournisseurs S3 compatibles',
     'providers.intro':
-      'Offres indicatives (janvier 2026) — vérifie toujours sur le site du fournisseur, ça change souvent. Appuie sur un nom pour ouvrir le site.',
+      'Offres indicatives (septembre 2026) — vérifie toujours sur le site du fournisseur, ça change souvent. Appuie sur un nom pour ouvrir le site.',
     'providers.note.b2':
-      '10 Go gratuits à vie, 1 Go/jour de téléchargement gratuit. Pas de limite de durée. (Fournisseur utilisé par défaut ici.)',
+      '10 Go de stockage gratuits, à vie. Sortie (egress) gratuite jusqu’à 3× le volume stocké/mois, puis 0,01 $/Go. (Fournisseur par défaut ici.)',
     'providers.note.r2':
-      '10 Go-mois gratuits à vie, et surtout aucun frais de sortie (egress). Idéal si tu télécharges beaucoup.',
+      '10 Go de stockage gratuits/mois + 1 M opérations classe A + 10 M classe B. Aucun frais de sortie (egress), sur toute l’offre. Pas de limite de durée.',
     'providers.note.scaleway':
-      '75 Go de stockage + 75 Go/mois de sortie gratuits, à vie. Datacenters en Europe (FR/NL/PL).',
+      '75 Go/mois de sortie (egress) gratuits, requêtes et upload inclus. Pas de stockage gratuit. Datacenters en Europe (FR/NL/PL).',
     'providers.note.storj':
-      '25 Go de stockage + 25 Go/mois de sortie gratuits. Stockage distribué, passerelle S3.',
+      'Plus de palier gratuit permanent depuis 2024 : essai limité dans le temps, puis compte payant (min. ~10 $). Stockage distribué, passerelle S3.',
     'providers.note.tebi':
-      '25 Go gratuits, aucun frais de sortie. S3 + FTP.',
+      '25 Go de stockage + 250 Go/mois de trafic gratuits, à vie. S3 + FTP.',
     'providers.note.idrive':
-      '10 Go gratuits. Tarif au To parmi les plus bas du marché.',
+      '10 Go gratuits à vie (+ essai 1 To pendant 7 jours). Sortie gratuite jusqu’à 3× le stockage/mois. ~4 $/To/mois, parmi les moins chers.',
     'providers.note.wasabi':
-      'Essai gratuit 30 jours (jusqu’à 1 To). Pas d’offre gratuite permanente ; facturation minimale 1 To et rétention 90 jours.',
+      'Essai gratuit 30 jours (jusqu’à 1 To, sans carte). Pas d’offre gratuite permanente ; ensuite facturation minimale 1 To/mois et rétention minimale 90 jours.',
     'providers.note.aws':
-      '5 Go gratuits pendant 12 mois pour les nouveaux comptes seulement. L’implémentation de référence.',
+      'Nouveaux comptes (depuis mi-2025) : plan à crédits (100 $, +100 $ via tâches, 6 mois). L’ancien palier 5 Go / 12 mois ne s’applique plus. L’implémentation S3 de référence.',
     'providers.note.minio':
-      'Open source et gratuit, mais à héberger toi-même (serveur, NAS…).',
+      'Open source (AGPL v3), à auto-héberger. Édition communautaire non maintenue depuis début 2026 (binaires précompilés non fournis).',
   },
   en: {
     'nav.browser': 'BucketPush',
@@ -624,25 +624,25 @@ const DICT: Record<Lang, Record<string, string>> = {
     'providers.button': 'S3 providers',
     'providers.title': 'S3-compatible providers',
     'providers.intro':
-      'Indicative offers (January 2026) — always check the provider’s site, they change often. Tap a name to open the site.',
+      'Indicative offers (September 2026) — always check the provider’s site, they change often. Tap a name to open the site.',
     'providers.note.b2':
-      '10 GB free forever, 1 GB/day free download. No time limit. (Default provider used here.)',
+      '10 GB storage free, forever. Egress free up to 3× the stored volume/month, then $0.01/GB. (Default provider here.)',
     'providers.note.r2':
-      '10 GB-month free forever, and crucially no egress fees. Great if you download a lot.',
+      '10 GB storage free/month + 1M Class A + 10M Class B ops. No egress fees at any level. No time limit.',
     'providers.note.scaleway':
-      '75 GB storage + 75 GB/month egress free, forever. Datacenters in Europe (FR/NL/PL).',
+      '75 GB/month egress free, requests and uploads included. No free storage. Datacenters in Europe (FR/NL/PL).',
     'providers.note.storj':
-      '25 GB storage + 25 GB/month egress free. Distributed storage, S3 gateway.',
+      'No permanent free tier since 2024: time-limited trial, then a paid account (min. ~$10). Distributed storage, S3 gateway.',
     'providers.note.tebi':
-      '25 GB free, no egress fees. S3 + FTP.',
+      '25 GB storage + 250 GB/month traffic free, forever. S3 + FTP.',
     'providers.note.idrive':
-      '10 GB free. Among the lowest per-TB pricing around.',
+      '10 GB free forever (+ a 1 TB 7-day trial). Egress free up to 3× stored/month. ~$4/TB/month, among the lowest.',
     'providers.note.wasabi':
-      '30-day free trial (up to 1 TB). No permanent free tier; 1 TB minimum billing and 90-day retention.',
+      '30-day free trial (up to 1 TB, no card). No permanent free tier; then 1 TB/month minimum billing and 90-day minimum retention.',
     'providers.note.aws':
-      '5 GB free for 12 months, new accounts only. The reference implementation.',
+      'New accounts (since mid-2025): credit-based plan ($100, +$100 via tasks, 6 months). The old 5 GB / 12-month tier no longer applies. The reference S3 implementation.',
     'providers.note.minio':
-      'Open source and free, but you host it yourself (server, NAS…).',
+      'Open source (AGPL v3), self-hosted. Community edition unmaintained since early 2026 (no prebuilt binaries).',
   },
 };
 
