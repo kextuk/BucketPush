@@ -42,15 +42,19 @@ npx react-native run-android        # build debug + install + Metro
 Au premier lancement : ouvrir **Config**, renseigner endpoint / region / bucket / clés,
 « Tester la connexion », puis **Ajouter des fichiers**.
 
-## Build release (APK)
+## Build release
 
 ```bash
-cd android
-./gradlew assembleRelease           # android/app/build/outputs/apk/release/
+tools/build-apk.sh [abi]          # APK autonome  -> app/build/outputs/apk/release/app-release.apk
+tools/build-aab.sh               # bundle Play    -> app/build/outputs/bundle/release/app-release.aab
+tools/install-adb.sh [--build] [abi] [-s serial]   # push l'APK release sur un device USB + lance l'app
 ```
 
-> La signature release utilise la `debug.keystore` du template. Générer une vraie clé
-> pour une vraie distribution (voir la doc RN "Signed APK").
+`abi` (ex. `arm64-v8a`) limite les architectures → build plus court pour tester.
+
+> Signature : si `~/.gradle/gradle.properties` définit `BUCKETPUSH_STORE_FILE` /
+> `_KEY_ALIAS` / `_STORE_PASSWORD` / `_KEY_PASSWORD`, la clé d'upload est utilisée ;
+> sinon Gradle retombe sur la debug key (refusée par le Play Store).
 
 ## Tests
 
