@@ -14,11 +14,12 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../App';
 import { S3Uploader, type ObjectVersion } from '../native/S3Uploader';
 import { formatBytes } from '../format';
-import { t } from '../i18n';
+import { t, useLang } from '../i18n';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Versions'>;
 
 export function VersionsScreen({ route }: Props) {
+  useLang();
   const { objectKey } = route.params;
   const [versions, setVersions] = useState<ObjectVersion[]>([]);
   const [loading, setLoading] = useState(false);

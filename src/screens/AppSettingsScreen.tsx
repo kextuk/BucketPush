@@ -1,4 +1,4 @@
-import React, { useEffect, useReducer, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -26,14 +26,14 @@ import {
   Row,
   controlStyles,
 } from '../components/SettingsControls';
-import { getLangPref, setLangPref, t, type LangPref } from '../i18n';
+import { getLangPref, setLangPref, t, useLang, type LangPref } from '../i18n';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
 export function AppSettingsScreen({ navigation }: Props) {
+  useLang();
   const [prefs, setPrefs] = useState<TransferPrefs>(DEFAULT_PREFS);
   const [loaded, setLoaded] = useState(false);
-  const [, bumpLang] = useReducer((n: number) => n + 1, 0);
 
   useEffect(() => {
     readPrefs().then(p => {
@@ -70,10 +70,7 @@ export function AppSettingsScreen({ navigation }: Props) {
           {(['auto', 'fr', 'en'] as LangPref[]).map(l => (
             <Pressable
               key={l}
-              onPress={() => {
-                setLangPref(l);
-                bumpLang();
-              }}
+              onPress={() => setLangPref(l)}
               style={[styles.langBtn, getLangPref() === l && styles.langBtnOn]}>
               <Text style={[styles.langTxt, getLangPref() === l && styles.langTxtOn]}>
                 {l === 'auto' ? t('settings.langAuto') : l === 'fr' ? 'FR' : 'EN'}

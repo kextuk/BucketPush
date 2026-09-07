@@ -15,13 +15,14 @@ import {
 } from '../config';
 import { S3Uploader } from '../native/S3Uploader';
 import { ActionSheet } from '../components/Sheets';
-import { t } from '../i18n';
+import { t, useLang } from '../i18n';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Profiles'>;
 
 const PENDING = new Set(['queued', 'uploading', 'paused']);
 
 export function ProfilesScreen({ navigation }: Props) {
+  useLang();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [menuProfile, setMenuProfile] = useState<Profile | null>(null);

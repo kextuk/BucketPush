@@ -34,7 +34,7 @@ import {
 } from '../config';
 import { S3Uploader } from '../native/S3Uploader';
 import { Field, IntInput, Row } from '../components/SettingsControls';
-import { t } from '../i18n';
+import { t, useLang } from '../i18n';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProfileEdit'>;
 
@@ -45,6 +45,7 @@ const has = (ov: PrefOverrides, k: keyof TransferPrefs) =>
   Object.prototype.hasOwnProperty.call(ov, k);
 
 export function SettingsScreen({ navigation, route }: Props) {
+  useLang();
   const profileId = route.params?.profileId;
   const [cfg, setCfg] = useState<Profile>(DEFAULT_CONFIG);
   const [globalPrefs, setGlobalPrefs] = useState<TransferPrefs>(DEFAULT_PREFS);

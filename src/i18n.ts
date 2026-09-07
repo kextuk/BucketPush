@@ -1,3 +1,4 @@
+import { useEffect, useReducer } from 'react';
 import { NativeModules, Platform } from 'react-native';
 import * as Keychain from 'react-native-keychain';
 
@@ -33,7 +34,19 @@ export function getLangPref(): LangPref {
 }
 export function onLangChange(cb: () => void): () => void {
   listeners.add(cb);
-  return () => listeners.delete(cb);
+  return () => {
+    listeners.delete(cb);
+  };
+}
+
+/**
+ * Re-render le composant appelant quand la langue change (changement à la volée,
+ * sans re-monter la navigation). Retourne la langue courante.
+ */
+export function useLang(): Lang {
+  const [, force] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => onLangChange(force), []);
+  return current;
 }
 
 /** À appeler au démarrage : lit la préférence stockée. */

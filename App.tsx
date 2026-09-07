@@ -16,7 +16,7 @@ import { ProfilesScreen } from './src/screens/ProfilesScreen';
 import { VersionsScreen } from './src/screens/VersionsScreen';
 import { loadConfig, toNativeConfig } from './src/config';
 import { S3Uploader } from './src/native/S3Uploader';
-import { getLang, initLang, onLangChange, t } from './src/i18n';
+import { initLang, t, useLang } from './src/i18n';
 
 export type RootStackParamList = {
   Queue: undefined;
@@ -44,25 +44,22 @@ export async function applyNativeConfig(): Promise<boolean> {
 function App(): React.JSX.Element {
   const scheme = useColorScheme();
   const [, bump] = useReducer((n: number) => n + 1, 0);
+  useLang(); // re-render à la volée quand la langue change (sans re-monter la nav)
 
   useEffect(() => {
     initLang().then(bump);
-    const off = onLangChange(bump);
     applyNativeConfig();
     if (Platform.OS === 'android' && Platform.Version >= 33) {
       PermissionsAndroid.request(
         PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
       ).catch(() => {});
     }
-    return off;
   }, []);
 
   return (
     <SafeAreaProvider>
       <StatusBar barStyle={scheme === 'dark' ? 'light-content' : 'dark-content'} />
-      <NavigationContainer
-        key={getLang()}
-        theme={scheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <NavigationContainer theme={scheme === 'dark' ? DarkTheme : DefaultTheme}>
         <Stack.Navigator>
           <Stack.Screen
             name="Browser"

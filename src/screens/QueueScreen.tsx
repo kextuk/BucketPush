@@ -14,12 +14,13 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../App';
 import { useUploader, type UiItem } from '../useUploader';
 import { getActiveProfile } from '../config';
-import { t } from '../i18n';
+import { t, useLang } from '../i18n';
 import { formatBytes, formatEta, formatSpeed, percent } from '../format';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Queue'>;
 
 export function QueueScreen({ navigation }: Props) {
+  const lang = useLang();
   const { items, queueStatus, hydrate, pause, resume, cancel, retry, clearCompleted } =
     useUploader();
   const [profileName, setProfileName] = useState('');
@@ -33,7 +34,7 @@ export function QueueScreen({ navigation }: Props) {
         </Pressable>
       ),
     });
-  }, [navigation]);
+  }, [navigation, lang]);
 
   useFocusEffect(
     useCallback(() => {

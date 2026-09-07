@@ -22,7 +22,7 @@ import { addFilesTo, addFolderTo, downloadTo, joinKey, summarizeEnqueue } from '
 import { sanitizeSegment } from '../keys';
 import { ActionSheet, PromptModal, type SheetOption } from '../components/Sheets';
 import { formatBytes, formatBytesExact, formatSpeed } from '../format';
-import { t } from '../i18n';
+import { t, useLang } from '../i18n';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Browser'>;
 
@@ -47,6 +47,7 @@ const baseName = (key: string) => key.slice(key.lastIndexOf('/') + 1);
 const uniq = (a: string[]) => Array.from(new Set(a));
 
 export function BrowserScreen({ navigation }: Props) {
+  const lang = useLang();
   const [prefix, setPrefix] = useState('');
   const [versions, setVersions] = useState<ObjectVersion[]>([]);
   const [commonPrefixes, setCommonPrefixes] = useState<string[]>([]);
@@ -98,7 +99,7 @@ export function BrowserScreen({ navigation }: Props) {
         </View>
       ),
     });
-  }, [navigation]);
+  }, [navigation, lang]);
 
   const load = useCallback(async (p: string, cursor?: Cursor) => {
     setLoading(true);
