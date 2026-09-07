@@ -1074,17 +1074,17 @@ export function BrowserScreen({ navigation }: Props) {
         }
       />
 
-      {summary.totalCount > 0 ? (
-        <Pressable style={styles.queueBanner} onPress={() => navigation.navigate('Queue')}>
+      <Pressable style={styles.queueBanner} onPress={() => navigation.navigate('Queue')}>
+        {summary.totalCount > 0 ? (
           <View style={styles.queueBarTrack}>
             <View style={[styles.queueBarFill, { width: `${summary.pct}%` }]} />
           </View>
-          <View style={styles.queueRow}>
-            <Text style={styles.queueText}>{queueLabel(summary)}</Text>
-            <Text style={styles.queueChevron}>›</Text>
-          </View>
-        </Pressable>
-      ) : null}
+        ) : null}
+        <View style={styles.queueRow}>
+          <Text style={styles.queueText}>{queueLabel(summary)}</Text>
+          <Text style={styles.queueChevron}>›</Text>
+        </View>
+      </Pressable>
 
       {mode === 'browse' && !op ? (
         <Pressable style={styles.fab} onPress={() => setSheet(true)}>
@@ -1240,6 +1240,7 @@ function queueLabel(s: {
   doneCount: number;
   totalCount: number;
 }): string {
+  if (s.totalCount === 0) return t('queue.banner.empty');
   if (s.failedCount > 0) return t('queue.banner.failed', { n: s.failedCount });
   if (s.activeCount > 0)
     return t('queue.banner.active', { n: s.activeCount, pct: s.pct, speed: formatSpeed(s.speedBps) });
