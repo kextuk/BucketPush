@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="all">
+<title>BucketPush — Guide d'utilisation / User Guide</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #ffffff;
+    color: #1b1b1f;
+  }
+  main { max-width: 760px; margin: 0 auto; padding: 40px 22px 80px; }
+  h1 { font-size: 1.7rem; margin: 0 0 4px; }
+  h2 { font-size: 1.25rem; margin: 38px 0 10px; }
+  h3 { font-size: 1.02rem; margin: 22px 0 6px; }
+  .updated { color: #6a6a70; font-size: .92rem; margin-bottom: 8px; }
+  hr { border: 0; border-top: 1px solid #e3e3e6; margin: 40px 0; }
+  ul, ol { padding-left: 1.3rem; }
+  li { margin-bottom: 6px; }
+  a { color: #0a66d0; }
+  code {
+    background: #f1f1f3;
+    border-radius: 4px;
+    padding: 0.1em 0.4em;
+    font-size: 0.92em;
+  }
+  .lang { color: #6a6a70; font-size: .9rem; }
+  .toc { background: #f7f7f9; border-radius: 10px; padding: 16px 20px; margin: 18px 0; }
+  .toc strong { display: block; margin-bottom: 6px; }
+  .toc ol { margin: 0; }
+  .note {
+    border-left: 3px solid #0a66d0;
+    padding: 2px 16px;
+    margin: 14px 0;
+    background: #f3f7fd;
+    border-radius: 0 8px 8px 0;
+  }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0 18px; font-size: .95rem; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid #e3e3e6; vertical-align: top; }
+  th { color: #6a6a70; font-weight: 600; font-size: .85rem; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #16171a; color: #e6e6e9; }
+    .updated, .lang, th { color: #9a9aa0; }
+    hr, th, td { border-color: #2c2d31; }
+    a { color: #6fb1ff; }
+    code { background: #222326; }
+    .toc { background: #1c1d21; }
+    .note { background: #182230; border-left-color: #6fb1ff; }
+  }
+</style>
+</head>
+<body>
+<main>
+
+<!-- =========================== FRANÇAIS =========================== -->
+<h1>Guide d'utilisation — BucketPush</h1>
+<p class="updated">Dernière mise à jour : 11 novembre 2026 · <a href="#en" class="lang">English version below</a></p>
+
+<p>BucketPush est un navigateur et un client de transfert pour serveurs de stockage
+compatibles S3 (Backblaze B2, Scaleway, Cloudflare R2, MinIO, AWS S3, etc.), conçu
+pour envoyer et recevoir des fichiers <strong>très volumineux</strong> (plusieurs
+dizaines voire centaines de Go) sans jamais saturer la mémoire ni planter.</p>
+
+<div class="toc">
+<strong>Sommaire</strong>
+<ol>
+  <li><a href="#fr-creds">Obtenir des identifiants S3</a></li>
+  <li><a href="#fr-profile">Créer un profil de connexion</a></li>
+  <li><a href="#fr-browse">Parcourir le bucket</a></li>
+  <li><a href="#fr-transfer">Envoyer et recevoir des fichiers</a></li>
+  <li><a href="#fr-queue">La file d'attente</a></li>
+  <li><a href="#fr-versions">Versions et fichiers « fantômes »</a></li>
+  <li><a href="#fr-tools">Outils</a></li>
+  <li><a href="#fr-settings">Paramètres : globaux et par profil</a></li>
+  <li><a href="#fr-trouble">Dépannage</a></li>
+</ol>
+</div>
+
+<h2 id="fr-creds">1. Obtenir des identifiants S3</h2>
+<p>BucketPush ne fournit pas de stockage : vous connectez votre propre compte chez
+un fournisseur compatible S3. Dans l'app, l'écran « À propos → Fournisseurs S3 »
+liste plusieurs options avec offre d'essai gratuite. Chez n'importe quel fournisseur,
+il vous faudra créer :</p>
+<ul>
+  <li>un <strong>bucket</strong> (l'espace de stockage) ;</li>
+  <li>une <strong>clé d'accès</strong> (access key ID + secret access key), avec les
+      droits lecture/écriture sur ce bucket.</li>
+</ul>
+<p>Notez aussi l'<strong>endpoint</strong> (l'adresse du serveur, ex.
+<code>https://s3.eu-central-003.backblazeb2.com</code>) — votre fournisseur
+l'affiche dans sa documentation ou son tableau de bord.</p>
+
+<h2 id="fr-profile">2. Créer un profil de connexion</h2>
+<ol>
+  <li>Onglet <strong>Profils</strong> → <strong>Nouveau profil</strong>.</li>
+  <li>Renseignez un nom, l'endpoint, le bucket, et collez vos deux clés.</li>
+  <li><strong>Path-style</strong> : à activer pour la plupart des fournisseurs
+      S3-compatibles (Backblaze B2, MinIO…) ; à désactiver pour AWS S3 classique.</li>
+  <li><strong>Tester la connexion</strong> avant d'enregistrer.</li>
+</ol>
+<p>Vous pouvez créer plusieurs profils (plusieurs fournisseurs, ou perso/pro) et
+basculer de l'un à l'autre depuis l'onglet Profils ; le navigateur se recharge
+automatiquement à la racine du bucket sélectionné.</p>
+
+<h2 id="fr-browse">3. Parcourir le bucket</h2>
+<p>L'écran principal liste dossiers et fichiers du bucket connecté. Appuyez sur un
+dossier pour y entrer, utilisez le fil d'Ariane en haut pour remonter. Le champ de
+filtre permet de chercher dans le dossier courant.</p>
+
+<h2 id="fr-transfer">4. Envoyer et recevoir des fichiers</h2>
+<p>Le bouton <strong>+</strong> ouvre le sélecteur de fichiers du système — choisissez-en
+un ou plusieurs, même très volumineux. L'envoi démarre immédiatement et continue
+<strong>en arrière-plan</strong> : vous pouvez éteindre l'écran ou changer d'application,
+le transfert se poursuit (notification de progression). Une coupure réseau met le
+transfert en pause ; il reprend automatiquement dès que la connexion revient, sans
+tout recommencer.</p>
+<p>Pour télécharger, sélectionnez un ou plusieurs fichiers puis <strong>Télécharger</strong> ;
+pour déplacer, <strong>Déplacer</strong> puis choisissez le dossier de destination.</p>
+
+<h2 id="fr-queue">5. La file d'attente</h2>
+<p>L'onglet <strong>File d'attente</strong> reste consultable même sans transfert en
+cours. Il affiche le débit cumulé en haut, et trie les éléments par état (terminés,
+en cours, en attente, échecs, annulés). Un appui long sur un élément propose pause,
+annulation ou nouvelle tentative. <strong>Annuler tout</strong> arrête tout en une fois.</p>
+
+<h2 id="fr-versions">6. Versions et fichiers « fantômes »</h2>
+<p>Si le versioning est activé côté bucket, supprimer un fichier ne l'efface pas
+vraiment : un « marqueur de suppression » le cache, l'ancienne version reste
+stockée (et facturée) tant qu'elle n'est pas purgée. L'écran <strong>Versions</strong>
+d'un fichier permet de <strong>restaurer</strong> (retirer le marqueur) ou de
+<strong>purger</strong> définitivement les anciennes versions.</p>
+
+<h2 id="fr-tools">7. Outils</h2>
+<table>
+<tr><th>Outil</th><th>Utilité</th></tr>
+<tr><td>Taille de ce dossier / du dépôt</td><td>Calcule l'espace occupé, y compris les anciennes versions non visibles dans l'explorateur.</td></tr>
+<tr><td>Purger les anciennes versions</td><td>Vide l'historique de versions d'un dossier ou de tout le bucket — libère l'espace facturé par le fournisseur.</td></tr>
+<tr><td>Nettoyer les uploads inachevés</td><td>Un transfert interrompu laisse des « parts » orphelines côté serveur (facturées, invisibles). Cet outil les retrouve et les annule. Mode <em>Prudent</em> = ignore les transferts récents/actifs ; <em>Tout annuler</em> = force tout.</td></tr>
+</table>
+
+<h2 id="fr-settings">8. Paramètres : globaux et par profil</h2>
+<p>L'écran <strong>Paramètres</strong> (icône ⚙) définit des valeurs par défaut
+communes à tous les profils : taille de part, nombre de parts/fichiers en
+parallèle, langue, etc. Dans l'écran d'édition d'un profil, chaque réglage peut
+être laissé « Hérité » (suit la valeur globale) ou basculé en « Spécifique » pour
+le figer juste pour ce profil.</p>
+<ul>
+  <li><strong>Taille de part</strong> : vide = adaptatif (32 Mio, agrandi
+      automatiquement pour les fichiers énormes afin de rester sous la limite de
+      10 000 parts par fichier).</li>
+  <li><strong>Parts / fichiers en parallèle</strong> : plus de parallélisme va
+      plus vite jusqu'à saturer votre connexion ou déclencher des ralentissements
+      (<code>503 SlowDown</code>) côté fournisseur — baissez si ça arrive.</li>
+  <li><strong>Ne pas ré-uploader si déjà présent</strong> : une requête HEAD
+      avant chaque envoi évite de retransmettre un fichier déjà sur le serveur.</li>
+</ul>
+
+<h2 id="fr-trouble">9. Dépannage</h2>
+<p><strong>« Connexion échouée » au test :</strong> vérifiez que l'endpoint commence
+par <code>https://</code>, qu'il ne contient pas le nom du bucket, que le bucket
+existe bien chez le fournisseur, et que la clé a les droits lecture/écriture sur ce
+bucket précis. Essayez de basculer <strong>Path-style</strong>.</p>
+<p><strong>Transfert très lent :</strong> la limite est presque toujours la
+connexion (Wi-Fi, 4G/5G) ou le débit autorisé par votre forfait fournisseur, pas
+l'application — elle ne fait que streamer les données sans jamais les charger
+entièrement en mémoire.</p>
+<p><strong>Le transfert s'arrête quand l'app est fermée :</strong> vérifiez que
+l'optimisation de batterie n'est pas appliquée à BucketPush dans les réglages
+Android de votre téléphone.</p>
+
+<hr>
+
+<!-- =========================== ENGLISH =========================== -->
+<h1 id="en">User Guide — BucketPush</h1>
+<p class="updated">Last updated: 11 November 2026</p>
+
+<p>BucketPush is a browser and transfer client for S3-compatible storage servers
+(Backblaze B2, Scaleway, Cloudflare R2, MinIO, AWS S3, etc.), built to send and
+receive <strong>very large files</strong> (tens or hundreds of GB) without ever
+choking memory or crashing.</p>
+
+<div class="toc">
+<strong>Contents</strong>
+<ol>
+  <li><a href="#en-creds">Getting S3 credentials</a></li>
+  <li><a href="#en-profile">Creating a connection profile</a></li>
+  <li><a href="#en-browse">Browsing the bucket</a></li>
+  <li><a href="#en-transfer">Uploading and downloading files</a></li>
+  <li><a href="#en-queue">The queue</a></li>
+  <li><a href="#en-versions">Versions and "ghost" files</a></li>
+  <li><a href="#en-tools">Tools</a></li>
+  <li><a href="#en-settings">Settings: global and per-profile</a></li>
+  <li><a href="#en-trouble">Troubleshooting</a></li>
+</ol>
+</div>
+
+<h2 id="en-creds">1. Getting S3 credentials</h2>
+<p>BucketPush doesn't provide storage itself: you connect your own account with an
+S3-compatible provider. In the app, the "About → S3 providers" screen lists several
+options with a free trial tier. With any provider you'll need to create:</p>
+<ul>
+  <li>a <strong>bucket</strong> (the storage space);</li>
+  <li>an <strong>access key</strong> (access key ID + secret access key), with
+      read/write rights on that bucket.</li>
+</ul>
+<p>Also note the <strong>endpoint</strong> (the server address, e.g.
+<code>https://s3.eu-central-003.backblazeb2.com</code>) — your provider shows it in
+its docs or dashboard.</p>
+
+<h2 id="en-profile">2. Creating a connection profile</h2>
+<ol>
+  <li><strong>Profiles</strong> tab → <strong>New profile</strong>.</li>
+  <li>Enter a name, the endpoint, the bucket, and paste both keys.</li>
+  <li><strong>Path-style</strong>: turn on for most S3-compatible providers
+      (Backblaze B2, MinIO…); off for plain AWS S3.</li>
+  <li><strong>Test connection</strong> before saving.</li>
+</ol>
+<p>You can create several profiles (different providers, or personal/work) and
+switch between them from the Profiles tab; the browser automatically reloads at
+the root of the selected bucket.</p>
+
+<h2 id="en-browse">3. Browsing the bucket</h2>
+<p>The main screen lists folders and files in the connected bucket. Tap a folder to
+enter it, use the breadcrumb at the top to go back up. The filter field searches
+within the current folder.</p>
+
+<h2 id="en-transfer">4. Uploading and downloading files</h2>
+<p>The <strong>+</strong> button opens the system file picker — pick one or several
+files, even very large ones. The upload starts immediately and keeps running
+<strong>in the background</strong>: you can turn off the screen or switch apps, the
+transfer continues (with a progress notification). A network drop pauses the
+transfer; it resumes automatically once the connection is back, without starting
+over.</p>
+<p>To download, select one or more files then <strong>Download</strong>; to move
+them, <strong>Move</strong> then pick the destination folder.</p>
+
+<h2 id="en-queue">5. The queue</h2>
+<p>The <strong>Queue</strong> tab stays available even with nothing running. It
+shows the combined speed at the top, and sorts items by state (done, running,
+pending, failed, canceled). Long-press an item for pause, cancel or retry.
+<strong>Cancel all</strong> stops everything at once.</p>
+
+<h2 id="en-versions">6. Versions and "ghost" files</h2>
+<p>If versioning is enabled on the bucket, deleting a file doesn't really erase it:
+a "delete marker" hides it, and the old version stays stored (and billed) until
+purged. A file's <strong>Versions</strong> screen lets you <strong>restore</strong>
+it (remove the marker) or <strong>purge</strong> old versions for good.</p>
+
+<h2 id="en-tools">7. Tools</h2>
+<table>
+<tr><th>Tool</th><th>What it's for</th></tr>
+<tr><td>Size of this folder / repo</td><td>Computes the space used, including old versions not shown in the browser.</td></tr>
+<tr><td>Purge old versions</td><td>Clears the version history of a folder or the whole bucket — frees space billed by the provider.</td></tr>
+<tr><td>Clean unfinished uploads</td><td>An interrupted transfer leaves orphan "parts" on the server (billed, invisible). This tool finds and cancels them. <em>Safe</em> mode skips recent/active transfers; <em>Abort all</em> forces everything.</td></tr>
+</table>
+
+<h2 id="en-settings">8. Settings: global and per-profile</h2>
+<p>The <strong>Settings</strong> screen (⚙ icon) sets defaults shared by every
+profile: part size, parallel parts/files, language, etc. On a profile's edit
+screen, each setting can stay "Inherited" (follows the global value) or be
+switched to "Specific" to pin it just for that profile.</p>
+<ul>
+  <li><strong>Part size</strong>: empty = adaptive (32 MiB, grown automatically for
+      huge files to stay under the 10,000-parts-per-file limit).</li>
+  <li><strong>Parallel parts / files</strong>: more parallelism goes faster until
+      it saturates your connection or triggers provider throttling
+      (<code>503 SlowDown</code>) — lower it if that happens.</li>
+  <li><strong>Skip if already uploaded</strong>: a HEAD request before each upload
+      avoids resending a file already on the server.</li>
+</ul>
+
+<h2 id="en-trouble">9. Troubleshooting</h2>
+<p><strong>"Connection failed" on test:</strong> check that the endpoint starts with
+<code>https://</code>, doesn't include the bucket name, that the bucket actually
+exists with the provider, and that the key has read/write rights on that exact
+bucket. Try toggling <strong>Path-style</strong>.</p>
+<p><strong>Transfer is very slow:</strong> the limit is almost always your
+connection (Wi-Fi, 4G/5G) or your provider's plan throughput, not the app — it only
+streams data and never loads it fully into memory.</p>
+<p><strong>Transfer stops when the app is closed:</strong> check that battery
+optimization isn't applied to BucketPush in your phone's Android settings.</p>
+
+</main>
+</body>
+</html>

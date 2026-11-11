@@ -6,6 +6,7 @@ transfert de **très gros fichiers** (> 10 Go, lots de centaines de Go) **sans c
 
 - ID application : `app.bucketpush.android` · package de code : `com.s3pusher` (inchangé)
 - 🇬🇧 [English README](README.md)
+- 📖 [Guide d'utilisation](https://kextuk.github.io/BucketPush/guide.html) · 🔒 [Politique de confidentialité](https://kextuk.github.io/BucketPush/privacy.html)
 
 > **Entièrement vibe-codé.** Ce projet a été écrit quasi intégralement en promptant
 > un assistant IA, de façon itérative, l'auteur relisant et lançant les builds. Ça

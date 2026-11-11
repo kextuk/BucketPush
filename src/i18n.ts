@@ -341,6 +341,7 @@ const DICT: Record<Lang, Record<string, string>> = {
       'Projet gratuit et open source. Aucune publicité, aucun pistage, aucun compte.',
     'about.privacy':
       'Respectueux de tes données : tes clés d’accès sont chiffrées et stockées uniquement sur l’appareil, et rien n’est envoyé ailleurs que vers le serveur S3 que tu configures.',
+    'about.guideButton': 'Guide d’utilisation',
     'about.permsTitle': 'Autorisations',
     'about.permNetwork': 'Réseau (Internet / état du réseau)',
     'about.permNetworkWhy':
@@ -644,6 +645,7 @@ const DICT: Record<Lang, Record<string, string>> = {
       'Free and open-source project. No ads, no tracking, no account.',
     'about.privacy':
       'Respectful of your data: your access keys are encrypted and stored on the device only, and nothing is sent anywhere except the S3 server you configure.',
+    'about.guideButton': 'User guide',
     'about.permsTitle': 'Permissions',
     'about.permNetwork': 'Network (Internet / network state)',
     'about.permNetworkWhy':

@@ -6,6 +6,7 @@ Android app (React Native, no Expo): an **S3-compatible bucket browser** plus
 
 - Application ID: `app.bucketpush.android` · code package: `com.s3pusher` (kept as-is)
 - 🇫🇷 [README en français](README_FR.md)
+- 📖 [User guide](https://kextuk.github.io/BucketPush/guide.html) · 🔒 [Privacy policy](https://kextuk.github.io/BucketPush/privacy.html)
 
 > **Fully vibe-coded.** This project was written almost entirely by prompting an
 > AI assistant, iteratively, with the author reviewing and running the builds.
