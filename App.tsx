@@ -3,8 +3,8 @@
  * sans crash (streaming natif) et en arrière-plan (Foreground Service + WorkManager).
  */
 import React, { useEffect, useReducer } from 'react';
-import { PermissionsAndroid, Platform, StatusBar } from 'react-native';
-import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
+import { PermissionsAndroid, Platform, StatusBar, useColorScheme } from 'react-native';
+import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -45,6 +45,8 @@ export async function applyNativeConfig(profile?: Profile): Promise<boolean> {
 function App(): React.JSX.Element {
   const [, bump] = useReducer((n: number) => n + 1, 0);
   useLang(); // re-render à la volée quand la langue change (sans re-monter la nav)
+  const scheme = useColorScheme();
+  const dark = scheme === 'dark';
 
   useEffect(() => {
     initLang().then(bump);
@@ -58,9 +60,8 @@ function App(): React.JSX.Element {
 
   return (
     <SafeAreaProvider>
-      {/* Thème clair forcé : les écrans n'ont pas encore de palette sombre lisible. */}
-      <StatusBar barStyle="dark-content" />
-      <NavigationContainer theme={DefaultTheme}>
+      <StatusBar barStyle={dark ? 'light-content' : 'dark-content'} />
+      <NavigationContainer theme={dark ? DarkTheme : DefaultTheme}>
         <Stack.Navigator>
           <Stack.Screen
             name="Browser"

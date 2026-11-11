@@ -26,6 +26,7 @@ import { S3Uploader } from '../native/S3Uploader';
 import { ActionSheet } from '../components/Sheets';
 import { haptic } from '../haptic';
 import { t, useLang } from '../i18n';
+import { useThemeColors } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Profiles'>;
 
@@ -34,6 +35,7 @@ const PENDING = new Set(['queued', 'uploading', 'paused']);
 export function ProfilesScreen({ navigation }: Props) {
   useLang();
   const insets = useSafeAreaInsets();
+  const c = useThemeColors();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [switchingId, setSwitchingId] = useState<string | null>(null);
@@ -163,7 +165,7 @@ export function ProfilesScreen({ navigation }: Props) {
           profiles.length ? { paddingBottom: 96 + insets.bottom } : styles.emptyWrap
         }
         ListEmptyComponent={
-          <Text style={styles.empty}>{t('profiles.empty')}</Text>
+          <Text style={[styles.empty, { color: c.dim }]}>{t('profiles.empty')}</Text>
         }
         renderItem={({ item }) => {
           const active = item.id === activeId;
@@ -173,8 +175,9 @@ export function ProfilesScreen({ navigation }: Props) {
               android_ripple={{ color: '#0a84ff22' }}
               style={({ pressed }) => [
                 styles.row,
+                { borderBottomColor: c.line },
                 active && styles.rowActive,
-                pressed && styles.rowPressed,
+                pressed && { backgroundColor: c.overlayPressed },
               ]}
               onPress={() => activate(item)}
               delayLongPress={240}
@@ -187,26 +190,29 @@ export function ProfilesScreen({ navigation }: Props) {
                   {switching ? (
                     <ActivityIndicator size="small" color="#0a84ff" style={styles.dot} />
                   ) : (
-                    <Text style={[styles.dot, active ? styles.dotOn : styles.dotOff]}>
+                    <Text
+                      style={[styles.dot, active ? styles.dotOn : { color: c.dim }]}>
                       {active ? '●' : '○'}
                     </Text>
                   )}
-                  <Text style={styles.name} numberOfLines={1}>
+                  <Text style={[styles.name, { color: c.text }]} numberOfLines={1}>
                     {item.name || t('profiles.noName')}
                   </Text>
                 </View>
-                <Text style={styles.sub} numberOfLines={1}>
+                <Text style={[styles.sub, { color: c.dim }]} numberOfLines={1}>
                   {switching
                     ? t('profiles.activating')
                     : (item.endpoint || t('profiles.noEndpoint')) +
                       (item.bucket ? ` · ${item.bucket}` : '')}
                 </Text>
                 {!item.hasCredentials && !switching ? (
-                  <Text style={styles.warn}>{t('profiles.noKeys')}</Text>
+                  <Text style={[styles.warn, { color: c.danger }]}>
+                    {t('profiles.noKeys')}
+                  </Text>
                 ) : null}
               </View>
               <Pressable hitSlop={12} onPress={() => setMenuProfile(item)}>
-                <Text style={styles.more}>⋯</Text>
+                <Text style={[styles.more, { color: c.dim }]}>⋯</Text>
               </Pressable>
             </Pressable>
           );
@@ -229,26 +235,23 @@ export function ProfilesScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   emptyWrap: { flexGrow: 1, alignItems: 'center', justifyContent: 'center' },
-  empty: { opacity: 0.6, textAlign: 'center', paddingHorizontal: 32 },
+  empty: { textAlign: 'center', paddingHorizontal: 32 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#8884',
   },
   rowActive: { backgroundColor: '#0a84ff18' },
-  rowPressed: { backgroundColor: '#8881' },
   rowMain: { flex: 1 },
   nameLine: { flexDirection: 'row', alignItems: 'center' },
   dot: { width: 22, fontSize: 18, marginRight: 6, textAlign: 'center' },
   dotOn: { color: '#0a84ff' },
-  dotOff: { color: '#888', opacity: 0.6 },
   name: { fontSize: 16, fontWeight: '600', flexShrink: 1 },
-  sub: { fontSize: 12, opacity: 0.6, marginTop: 3 },
-  warn: { fontSize: 11, color: '#c62828', marginTop: 3 },
-  more: { fontSize: 22, opacity: 0.5, paddingHorizontal: 6 },
+  sub: { fontSize: 12, marginTop: 3 },
+  warn: { fontSize: 11, marginTop: 3 },
+  more: { fontSize: 22, paddingHorizontal: 6 },
   fab: {
     position: 'absolute',
     left: 16,

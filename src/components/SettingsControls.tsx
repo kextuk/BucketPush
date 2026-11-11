@@ -1,6 +1,8 @@
 import React from 'react';
 import { Platform, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { useThemeColors } from '../theme';
+
 /** Champ vertical : libellé au-dessus, contenu, puis indice optionnel. */
 export function Field({
   label,
@@ -11,11 +13,12 @@ export function Field({
   hint?: string;
   children: React.ReactNode;
 }) {
+  const c = useThemeColors();
   return (
     <View style={styles.field}>
-      <Text style={styles.label}>{label}</Text>
+      <Text style={[styles.label, { color: c.text }]}>{label}</Text>
       {children}
-      {hint ? <Text style={styles.hint}>{hint}</Text> : null}
+      {hint ? <Text style={[styles.hint, { color: c.dim }]}>{hint}</Text> : null}
     </View>
   );
 }
@@ -30,11 +33,12 @@ export function Row({
   hint?: string;
   children: React.ReactNode;
 }) {
+  const c = useThemeColors();
   return (
     <View style={styles.switchRow}>
       <View style={styles.switchLabel}>
-        <Text style={styles.label}>{label}</Text>
-        {hint ? <Text style={styles.hint}>{hint}</Text> : null}
+        <Text style={[styles.label, { color: c.text }]}>{label}</Text>
+        {hint ? <Text style={[styles.hint, { color: c.dim }]}>{hint}</Text> : null}
       </View>
       {children}
     </View>
@@ -55,12 +59,13 @@ export function IntInput({
   max: number;
   placeholder?: string;
 }) {
+  const c = useThemeColors();
   return (
     <TextInput
-      style={styles.input}
+      style={[styles.input, { color: c.text, backgroundColor: c.inputBg, borderColor: c.line }]}
       keyboardType="number-pad"
       placeholder={placeholder}
-      placeholderTextColor="#8a8a8e"
+      placeholderTextColor={c.placeholder}
       value={value != null ? String(value) : ''}
       onChangeText={txt => {
         const s = txt.replace(/[^0-9]/g, '');
@@ -71,23 +76,22 @@ export function IntInput({
   );
 }
 
+/** Style de base d'un champ texte ; fusionner avec `{ color, backgroundColor, borderColor }`
+ *  via `useThemeColors()` côté appelant (ex. `[controlStyles.input, { color: c.text, ... }]`). */
 export const controlStyles = StyleSheet.create({
   input: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#8888',
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: Platform.OS === 'ios' ? 12 : 8,
     fontSize: 15,
-    color: '#1b1b1f', // thème clair forcé : texte sombre, ne pas hériter du dark natif
-    backgroundColor: '#fff',
   },
 });
 
 const styles = StyleSheet.create({
   field: { marginBottom: 16 },
-  label: { fontSize: 13, fontWeight: '600', marginBottom: 6, opacity: 0.8 },
-  hint: { fontSize: 11, opacity: 0.55, marginTop: 4 },
+  label: { fontSize: 13, fontWeight: '600', marginBottom: 6 },
+  hint: { fontSize: 11, marginTop: 4 },
   input: controlStyles.input,
   switchRow: {
     flexDirection: 'row',

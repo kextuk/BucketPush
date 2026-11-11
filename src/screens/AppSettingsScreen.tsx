@@ -21,22 +21,19 @@ import {
   validatePrefs,
   type TransferPrefs,
 } from '../config';
-import {
-  Field,
-  IntInput,
-  Row,
-  controlStyles,
-} from '../components/SettingsControls';
+import { Field, IntInput, Row } from '../components/SettingsControls';
 import { AboutModal } from '../components/AboutModal';
 import { ProvidersModal } from '../components/ProvidersModal';
 import { GuideModal } from '../components/GuideModal';
 import { getLangPref, setLangPref, t, useLang, type LangPref } from '../i18n';
+import { useThemeColors } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
 export function AppSettingsScreen({ navigation }: Props) {
   useLang();
   const insets = useSafeAreaInsets();
+  const c = useThemeColors();
   const [prefs, setPrefs] = useState<TransferPrefs>(DEFAULT_PREFS);
   const [loaded, setLoaded] = useState(false);
   const [about, setAbout] = useState(false);
@@ -88,8 +85,8 @@ export function AppSettingsScreen({ navigation }: Props) {
         </View>
       </Row>
 
-      <Text style={styles.section}>{t('settings.transferSection')}</Text>
-      <Text style={styles.intro}>{t('settings.transferIntro')}</Text>
+      <Text style={[styles.section, { color: c.text }]}>{t('settings.transferSection')}</Text>
+      <Text style={[styles.intro, { color: c.dim }]}>{t('settings.transferIntro')}</Text>
 
       <Field label={t('settings.partSize')} hint={t('settings.partSizeHint')}>
         <IntInput
@@ -149,7 +146,7 @@ export function AppSettingsScreen({ navigation }: Props) {
         <Text style={styles.btnText}>{t('common.save')}</Text>
       </Pressable>
 
-      <Text style={styles.section}>{t('about.title')}</Text>
+      <Text style={[styles.section, { color: c.text }]}>{t('about.title')}</Text>
       <Pressable style={styles.aboutBtn} onPress={() => setGuide(true)}>
         <Text style={styles.aboutTxt}>{t('guide.button')}</Text>
       </Pressable>
@@ -175,8 +172,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { padding: 16, paddingBottom: 48 },
   section: { fontSize: 15, fontWeight: '700', marginTop: 8, marginBottom: 6 },
-  intro: { fontSize: 12, opacity: 0.6, marginBottom: 16 },
-  input: controlStyles.input,
+  intro: { fontSize: 12, marginBottom: 16 },
   btn: {
     backgroundColor: '#0a84ff',
     borderRadius: 12,

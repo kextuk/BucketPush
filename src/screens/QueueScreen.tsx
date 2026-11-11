@@ -16,6 +16,7 @@ import { useUploader, type UiItem } from '../useUploader';
 import { getActiveProfile } from '../config';
 import { t, useLang } from '../i18n';
 import { formatBytes, formatEta, formatSpeed, percent } from '../format';
+import { useThemeColors, type ThemeColors } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Queue'>;
 
@@ -33,6 +34,7 @@ const PENDING_STATUS = ['queued', 'uploading', 'paused'];
 
 export function QueueScreen({ navigation }: Props) {
   const lang = useLang();
+  const c = useThemeColors();
   const {
     items,
     queueStatus,
@@ -121,9 +123,9 @@ export function QueueScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.toolbar}>
+      <View style={[styles.toolbar, { borderBottomColor: c.line }]}>
         <Pressable onPress={() => navigation.navigate('Profiles')}>
-          <Text style={styles.status}>
+          <Text style={[styles.status, { color: c.dim }]}>
             {profileName ? `${profileName} · ` : ''}
             {labelForQueue(queueStatus)}
             {summary.speedBps > 0 ? ` · ${formatSpeed(summary.speedBps)}` : ''}
@@ -156,33 +158,35 @@ export function QueueScreen({ navigation }: Props) {
         contentContainerStyle={items.length ? styles.listPad : styles.emptyWrap}
         refreshControl={<RefreshControl refreshing={false} onRefresh={hydrate} />}
         ListEmptyComponent={
-          <Text style={styles.empty}>{t('queue.empty')}</Text>
+          <Text style={[styles.empty, { color: c.dim }]}>{t('queue.empty')}</Text>
         }
-        renderItem={({ item }) => <Row item={item} onPress={() => onItemPress(item)} />}
+        renderItem={({ item }) => (
+          <Row item={item} onPress={() => onItemPress(item)} c={c} />
+        )}
       />
     </View>
   );
 }
 
-function Row({ item, onPress }: { item: UiItem; onPress: () => void }) {
+function Row({ item, onPress, c }: { item: UiItem; onPress: () => void; c: ThemeColors }) {
   const pct = percent(item.uploadedBytes, item.totalBytes || item.sizeBytes);
   return (
-    <Pressable style={styles.row} onPress={onPress}>
+    <Pressable style={[styles.row, { borderBottomColor: c.line }]} onPress={onPress}>
       <View style={styles.rowHead}>
-        <Text style={styles.name} numberOfLines={1}>
+        <Text style={[styles.name, { color: c.text }]} numberOfLines={1}>
           {item.displayName}
         </Text>
         <Text style={[styles.badge, badgeStyle(item.status)]}>{labelForItem(item.status)}</Text>
       </View>
-      <View style={styles.barTrack}>
+      <View style={[styles.barTrack, { backgroundColor: c.line }]}>
         <View style={[styles.barFill, { width: `${pct}%` }]} />
       </View>
       <View style={styles.rowMeta}>
-        <Text style={styles.meta}>
+        <Text style={[styles.meta, { color: c.dim }]}>
           {formatBytes(item.uploadedBytes)} / {formatBytes(item.totalBytes || item.sizeBytes)} ·{' '}
           {pct}%
         </Text>
-        <Text style={styles.meta}>
+        <Text style={[styles.meta, { color: c.dim }]}>
           {item.status === 'uploading'
             ? `${formatSpeed(item.speedBps)} · ${formatEta(item.etaSeconds)}`
             : item.partsTotal
@@ -191,7 +195,7 @@ function Row({ item, onPress }: { item: UiItem; onPress: () => void }) {
         </Text>
       </View>
       {item.error ? (
-        <Text style={styles.errorText} numberOfLines={2}>
+        <Text style={[styles.errorText, { color: c.danger }]} numberOfLines={2}>
           {item.error}
         </Text>
       ) : null}
@@ -229,21 +233,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#8886',
   },
-  status: { fontSize: 13, opacity: 0.7 },
+  status: { fontSize: 13 },
   toolbarBtns: { flexDirection: 'row', gap: 8 },
   btn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: '#0a84ff' },
   btnDanger: { backgroundColor: '#c62828' },
   btnText: { color: '#fff', fontWeight: '600', fontSize: 13 },
   listPad: { paddingBottom: 24 },
   emptyWrap: { flexGrow: 1, alignItems: 'center', justifyContent: 'center' },
-  empty: { opacity: 0.6, textAlign: 'center', paddingHorizontal: 32 },
+  empty: { textAlign: 'center', paddingHorizontal: 32 },
   row: {
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#8884',
   },
   rowHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   name: { flex: 1, fontSize: 15, fontWeight: '600' },
@@ -257,12 +259,11 @@ const styles = StyleSheet.create({
   barTrack: {
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#8883',
     marginTop: 8,
     overflow: 'hidden',
   },
   barFill: { height: 6, backgroundColor: '#0a84ff' },
   rowMeta: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
-  meta: { fontSize: 12, opacity: 0.65 },
-  errorText: { fontSize: 12, color: '#c62828', marginTop: 4 },
+  meta: { fontSize: 12 },
+  errorText: { fontSize: 12, marginTop: 4 },
 });

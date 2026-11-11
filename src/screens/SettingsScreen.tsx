@@ -36,6 +36,7 @@ import {
 import { S3Uploader } from '../native/S3Uploader';
 import { Field, IntInput, Row } from '../components/SettingsControls';
 import { t, useLang } from '../i18n';
+import { useThemeColors } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProfileEdit'>;
 
@@ -48,6 +49,11 @@ const has = (ov: PrefOverrides, k: keyof TransferPrefs) =>
 export function SettingsScreen({ navigation, route }: Props) {
   useLang();
   const insets = useSafeAreaInsets();
+  const c = useThemeColors();
+  const inputStyle = [
+    styles.input,
+    { color: c.text, backgroundColor: c.inputBg, borderColor: c.line },
+  ];
   const profileId = route.params?.profileId;
   const [cfg, setCfg] = useState<Profile>(DEFAULT_CONFIG);
   const [globalPrefs, setGlobalPrefs] = useState<TransferPrefs>(DEFAULT_PREFS);
@@ -151,7 +157,7 @@ export function SettingsScreen({ navigation, route }: Props) {
 
   const renderInherit = (k: keyof TransferPrefs) => (
     <View style={styles.inheritRow}>
-      <Text style={styles.inheritTxt}>
+      <Text style={[styles.inheritTxt, { color: c.dim }]}>
         {has(cfg.overrides, k)
           ? t('settings.specific')
           : t('settings.inheritedValue', { v: fmtGlobal(k) })}
@@ -192,7 +198,7 @@ export function SettingsScreen({ navigation, route }: Props) {
       {renderInherit(k)}
       {has(cfg.overrides, k) ? (
         <View style={styles.inheritRow}>
-          <Text style={styles.inheritTxt}>{t('settings.specificValue')}</Text>
+          <Text style={[styles.inheritTxt, { color: c.dim }]}>{t('settings.specificValue')}</Text>
           <Switch value={!!cfg.overrides[k]} onValueChange={v => setOverride(k, v)} />
         </View>
       ) : null}
@@ -208,8 +214,8 @@ export function SettingsScreen({ navigation, route }: Props) {
         keyboardShouldPersistTaps="handled">
         <Field label={t('settings.name')} hint={t('settings.nameHint')}>
           <TextInput
-            style={styles.input}
-            placeholderTextColor="#8a8a8e"
+            style={inputStyle}
+            placeholderTextColor={c.placeholder}
             value={cfg.name}
             onChangeText={v => set('name', v)}
             placeholder={t('settings.namePlaceholder')}
@@ -218,8 +224,8 @@ export function SettingsScreen({ navigation, route }: Props) {
 
         <Field label={t('settings.endpoint')} hint={t('settings.endpointHint')}>
           <TextInput
-            style={styles.input}
-            placeholderTextColor="#8a8a8e"
+            style={inputStyle}
+            placeholderTextColor={c.placeholder}
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="url"
@@ -231,8 +237,8 @@ export function SettingsScreen({ navigation, route }: Props) {
 
         <Field label={t('settings.bucket')}>
           <TextInput
-            style={styles.input}
-            placeholderTextColor="#8a8a8e"
+            style={inputStyle}
+            placeholderTextColor={c.placeholder}
             autoCapitalize="none"
             autoCorrect={false}
             value={cfg.bucket}
@@ -242,8 +248,8 @@ export function SettingsScreen({ navigation, route }: Props) {
 
         <Field label={t('settings.keyPrefix')} hint={t('settings.keyPrefixHint')}>
           <TextInput
-            style={styles.input}
-            placeholderTextColor="#8a8a8e"
+            style={inputStyle}
+            placeholderTextColor={c.placeholder}
             autoCapitalize="none"
             autoCorrect={false}
             value={cfg.keyPrefix}
@@ -253,8 +259,8 @@ export function SettingsScreen({ navigation, route }: Props) {
 
         <Field label={t('settings.accessKeyId')}>
           <TextInput
-            style={styles.input}
-            placeholderTextColor="#8a8a8e"
+            style={inputStyle}
+            placeholderTextColor={c.placeholder}
             autoCapitalize="none"
             autoCorrect={false}
             value={accessKeyId}
@@ -264,8 +270,8 @@ export function SettingsScreen({ navigation, route }: Props) {
 
         <Field label={t('settings.secret')}>
           <TextInput
-            style={styles.input}
-            placeholderTextColor="#8a8a8e"
+            style={inputStyle}
+            placeholderTextColor={c.placeholder}
             autoCapitalize="none"
             autoCorrect={false}
             secureTextEntry
@@ -283,8 +289,8 @@ export function SettingsScreen({ navigation, route }: Props) {
 
         <Field label={t('settings.region')} hint={t('settings.regionHint')}>
           <TextInput
-            style={styles.input}
-            placeholderTextColor="#8a8a8e"
+            style={inputStyle}
+            placeholderTextColor={c.placeholder}
             autoCapitalize="none"
             autoCorrect={false}
             placeholder="auto"
@@ -293,8 +299,8 @@ export function SettingsScreen({ navigation, route }: Props) {
           />
         </Field>
 
-        <Text style={styles.section}>{t('settings.transferSection')}</Text>
-        <Text style={styles.intro}>{t('settings.overrideIntro')}</Text>
+        <Text style={[styles.section, { color: c.text }]}>{t('settings.transferSection')}</Text>
+        <Text style={[styles.intro, { color: c.dim }]}>{t('settings.overrideIntro')}</Text>
 
         {renderNum('partSizeMiB', t('settings.partSize'), t('settings.partSizeHint'))}
         {renderNum(
@@ -332,7 +338,9 @@ export function SettingsScreen({ navigation, route }: Props) {
         </View>
 
         <Pressable style={styles.forget} onPress={onForget}>
-          <Text style={styles.forgetText}>{t('settings.forgetKeys')}</Text>
+          <Text style={[styles.forgetText, { color: c.danger }]}>
+            {t('settings.forgetKeys')}
+          </Text>
         </Pressable>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -342,26 +350,22 @@ export function SettingsScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { padding: 16, paddingBottom: 48 },
-  label: { fontSize: 13, fontWeight: '600', marginBottom: 6, opacity: 0.8 },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#8888',
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: Platform.OS === 'ios' ? 12 : 8,
     fontSize: 15,
-    color: '#1b1b1f',
-    backgroundColor: '#fff',
   },
   section: { fontSize: 15, fontWeight: '700', marginTop: 8, marginBottom: 6 },
-  intro: { fontSize: 12, opacity: 0.6, marginBottom: 16 },
+  intro: { fontSize: 12, marginBottom: 16 },
   inheritRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
   },
-  inheritTxt: { flex: 1, fontSize: 13, opacity: 0.75 },
+  inheritTxt: { flex: 1, fontSize: 13 },
   actions: { flexDirection: 'row', gap: 12, marginTop: 8 },
   btn: {
     flex: 1,
@@ -374,5 +378,5 @@ const styles = StyleSheet.create({
   btnGhost: { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#0a84ff' },
   btnGhostText: { color: '#0a84ff', fontWeight: '700', fontSize: 15 },
   forget: { marginTop: 24, alignItems: 'center' },
-  forgetText: { color: '#c62828', fontSize: 13 },
+  forgetText: { fontSize: 13 },
 });

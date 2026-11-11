@@ -15,11 +15,13 @@ import type { RootStackParamList } from '../../App';
 import { S3Uploader, type ObjectVersion } from '../native/S3Uploader';
 import { formatBytes } from '../format';
 import { t, useLang } from '../i18n';
+import { useThemeColors } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Versions'>;
 
 export function VersionsScreen({ route }: Props) {
   useLang();
+  const c = useThemeColors();
   const { objectKey } = route.params;
   const [versions, setVersions] = useState<ObjectVersion[]>([]);
   const [loading, setLoading] = useState(false);
@@ -118,10 +120,10 @@ export function VersionsScreen({ route }: Props) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.key} numberOfLines={2}>
+      <Text style={[styles.key, { color: c.dim, borderBottomColor: c.line }]} numberOfLines={2}>
         {objectKey}
       </Text>
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? <Text style={[styles.error, { color: c.danger }]}>{error}</Text> : null}
 
       <FlatList
         data={versions}
@@ -129,24 +131,28 @@ export function VersionsScreen({ route }: Props) {
         onRefresh={load}
         refreshing={loading}
         ListEmptyComponent={
-          loading ? undefined : <Text style={styles.dim}>{t('ver.hintNoVersions')}</Text>
+          loading ? undefined : (
+            <Text style={[styles.dim, { color: c.dim }]}>{t('ver.hintNoVersions')}</Text>
+          )
         }
         renderItem={({ item }) => (
           <Pressable
-            style={styles.row}
+            style={[styles.row, { borderBottomColor: c.line }]}
             disabled={busy || item.isLatest}
             onPress={() => !item.isLatest && removeOne(item)}>
             <View style={styles.rowMain}>
-              <Text style={styles.line1}>
+              <Text style={[styles.line1, { color: c.text }]}>
                 {formatBytes(item.size)}
                 {item.isDeleteMarker ? `  (${t('ver.deleteMarker')})` : ''}
               </Text>
-              <Text style={styles.line2}>{shortDateTime(item.lastModified)}</Text>
+              <Text style={[styles.line2, { color: c.dim }]}>
+                {shortDateTime(item.lastModified)}
+              </Text>
             </View>
             {item.isLatest ? (
               <Text style={styles.badge}>{t('ver.current')}</Text>
             ) : (
-              <Text style={styles.del}>{t('common.delete')}</Text>
+              <Text style={[styles.del, { color: c.danger }]}>{t('common.delete')}</Text>
             )}
           </Pressable>
         )}
@@ -176,24 +182,21 @@ const styles = StyleSheet.create({
   key: {
     fontFamily: 'monospace',
     fontSize: 12,
-    opacity: 0.7,
     padding: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#8886',
   },
-  error: { color: '#c62828', padding: 12, fontSize: 13 },
-  dim: { opacity: 0.6, textAlign: 'center', padding: 32 },
+  error: { padding: 12, fontSize: 13 },
+  dim: { textAlign: 'center', padding: 32 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#8884',
   },
   rowMain: { flex: 1 },
   line1: { fontSize: 15 },
-  line2: { fontSize: 12, opacity: 0.55, marginTop: 3 },
+  line2: { fontSize: 12, marginTop: 3 },
   badge: {
     fontSize: 11,
     color: '#fff',
@@ -203,7 +206,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     overflow: 'hidden',
   },
-  del: { fontSize: 12, color: '#c62828', fontWeight: '600' },
+  del: { fontSize: 12, fontWeight: '600' },
   purge: {
     margin: 16,
     backgroundColor: '#b71c1c',

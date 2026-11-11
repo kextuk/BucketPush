@@ -33,6 +33,7 @@ import { ActionSheet, PromptModal, type SheetOption } from '../components/Sheets
 import { formatBytes, formatBytesExact, formatSpeed } from '../format';
 import { haptic } from '../haptic';
 import { t, useLang } from '../i18n';
+import { useThemeColors, type ThemeColors } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Browser'>;
 
@@ -58,6 +59,7 @@ const uniq = (a: string[]) => Array.from(new Set(a));
 
 export function BrowserScreen({ navigation }: Props) {
   const lang = useLang();
+  const c = useThemeColors();
   const insets = useSafeAreaInsets();
   const [profileName, setProfileName] = useState('');
   const [prefix, setPrefix] = useState('');
@@ -104,13 +106,11 @@ export function BrowserScreen({ navigation }: Props) {
       headerTitle: () => (
         <View style={styles.titleWrap}>
           <Text style={styles.brand} numberOfLines={1}>
-            <Text style={[styles.brandBucket, styles.brandBucketLight]}>Bucket</Text>
+            <Text style={[styles.brandBucket, { color: c.text }]}>Bucket</Text>
             <Text style={styles.brandPush}>Push</Text>
           </Text>
           {profileName ? (
-            <Text
-              style={[styles.titleProfile, styles.titleProfileLight]}
-              numberOfLines={1}>
+            <Text style={[styles.titleProfile, { color: c.dim }]} numberOfLines={1}>
               {profileName}
             </Text>
           ) : null}
@@ -128,7 +128,7 @@ export function BrowserScreen({ navigation }: Props) {
         </View>
       ),
     });
-  }, [navigation, lang, profileName]);
+  }, [navigation, lang, profileName, c.text, c.dim]);
 
   const load = useCallback(async (p: string, cursor?: Cursor) => {
     setLoading(true);
@@ -790,7 +790,7 @@ export function BrowserScreen({ navigation }: Props) {
     return (
       <View style={styles.container}>
         <Pressable style={styles.center} onPress={() => navigation.navigate('Profiles')}>
-          <Text style={styles.dimText}>
+          <Text style={[styles.dimText, { color: c.dim }]}>
             {t('noProfile.title')}{'\n'}{t('noProfile.tap')}
           </Text>
         </Pressable>
@@ -804,14 +804,15 @@ export function BrowserScreen({ navigation }: Props) {
       horizontal
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={styles.crumbs}>
-      <Crumb label="Bucket" onPress={() => setPrefix('')} active={!segments.length} />
+      <Crumb label="Bucket" onPress={() => setPrefix('')} active={!segments.length} c={c} />
       {segments.map((seg, i) => (
         <React.Fragment key={i}>
-          <Text style={styles.sep}>›</Text>
+          <Text style={[styles.sep, { color: c.dim }]}>›</Text>
           <Crumb
             label={seg}
             active={i === segments.length - 1}
             onPress={() => setPrefix(segments.slice(0, i + 1).join('/') + '/')}
+            c={c}
           />
         </React.Fragment>
       ))}
@@ -849,16 +850,16 @@ export function BrowserScreen({ navigation }: Props) {
   return (
     <View style={styles.container}>
       {mode === 'browse' ? (
-        <View style={styles.topBar}>
+        <View style={[styles.topBar, { borderBottomColor: c.line }]}>
           <View style={styles.crumbRow}>{crumbs}</View>
           {showFilter ? (
-            <View style={styles.actionsRow}>
+            <View style={[styles.actionsRow, { borderTopColor: c.line }]}>
               <TextInput
-                style={styles.filterInput}
+                style={[styles.filterInput, { color: c.text, borderColor: c.line }]}
                 value={filter}
                 onChangeText={setFilter}
                 placeholder={t('browser.filter')}
-                placeholderTextColor="#888"
+                placeholderTextColor={c.placeholder}
                 autoFocus
                 autoCapitalize="none"
               />
@@ -873,7 +874,7 @@ export function BrowserScreen({ navigation }: Props) {
               </Pressable>
             </View>
           ) : (
-            <View style={styles.actionsRow}>
+            <View style={[styles.actionsRow, { borderTopColor: c.line }]}>
               <Pressable
                 onPress={() => setPrompt({ kind: 'newFolder' })}
                 style={styles.tBtn}>
@@ -952,7 +953,9 @@ export function BrowserScreen({ navigation }: Props) {
         </View>
       )}
 
-      {mode === 'move' ? <View style={styles.moveCrumbs}>{crumbs}</View> : null}
+      {mode === 'move' ? (
+        <View style={[styles.moveCrumbs, { borderBottomColor: c.line }]}>{crumbs}</View>
+      ) : null}
 
       {op ? (
         <View>
@@ -972,7 +975,7 @@ export function BrowserScreen({ navigation }: Props) {
         </View>
       ) : null}
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? <Text style={[styles.error, { color: c.danger }]}>{error}</Text> : null}
 
       <FlatList
         data={displayRows}
@@ -987,13 +990,15 @@ export function BrowserScreen({ navigation }: Props) {
         }
         ListEmptyComponent={
           loading ? undefined : (
-            <Text style={styles.dimText}>{filter ? t('browser.noResult') : t('browser.empty')}</Text>
+            <Text style={[styles.dimText, { color: c.dim }]}>
+              {filter ? t('browser.noResult') : t('browser.empty')}
+            </Text>
           )
         }
         renderItem={({ item }) =>
           item.kind === 'folder' ? (
             <Pressable
-              style={[styles.row, item.ghost && styles.rowGhost]}
+              style={[styles.row, { borderBottomColor: c.line }, item.ghost && styles.rowGhost]}
               onPress={() => setPrefix(item.prefix)}
               delayLongPress={240}
               onLongPress={() => {
@@ -1007,11 +1012,11 @@ export function BrowserScreen({ navigation }: Props) {
               }}>
               <Text style={styles.folderIcon}>{item.ghost ? '🗑' : '📁'}</Text>
               <View style={styles.rowMain}>
-                <Text style={styles.rowName} numberOfLines={1}>
+                <Text style={[styles.rowName, { color: c.text }]} numberOfLines={1}>
                   {item.name}
                 </Text>
                 {folderSizes[item.prefix] && folderSizes[item.prefix] !== 'loading' ? (
-                  <Text style={styles.rowMeta}>
+                  <Text style={[styles.rowMeta, { color: c.dim }]}>
                     {formatBytes((folderSizes[item.prefix] as { bytes: number }).bytes)} ·{' '}
                     {(folderSizes[item.prefix] as { count: number }).count} {t('browser.obj')}
                   </Text>
@@ -1026,12 +1031,13 @@ export function BrowserScreen({ navigation }: Props) {
                   <Text style={styles.sumBtn}>∑</Text>
                 </Pressable>
               ) : null}
-              <Text style={styles.chevron}>›</Text>
+              <Text style={[styles.chevron, { color: c.dim }]}>›</Text>
             </Pressable>
           ) : (
             <Pressable
               style={[
                 styles.row,
+                { borderBottomColor: c.line },
                 item.ghost && styles.rowGhost,
                 mode === 'move' && styles.rowMoving,
               ]}
@@ -1043,13 +1049,15 @@ export function BrowserScreen({ navigation }: Props) {
                   {selected.includes(item.key) ? <Text style={styles.checkMark}>✓</Text> : null}
                 </View>
               ) : (
-                <Text style={styles.fileIcon}>{item.ghost ? '🗑' : '·'}</Text>
+                <Text style={[styles.fileIcon, { color: c.dim }]}>
+                  {item.ghost ? '🗑' : '·'}
+                </Text>
               )}
               <View style={styles.rowMain}>
-                <Text style={styles.rowName} numberOfLines={1}>
+                <Text style={[styles.rowName, { color: c.text }]} numberOfLines={1}>
                   {item.name || baseName(item.key)}
                 </Text>
-                <Text style={styles.rowMeta}>
+                <Text style={[styles.rowMeta, { color: c.dim }]}>
                   {formatBytes(item.ghost ? item.totalBytes : item.size)}
                   {item.lastModified ? ` · ${shortDate(item.lastModified)}` : ''}
                   {item.versionCount > 1 ? ` · ${t('browser.versionsShort', { n: item.versionCount })}` : ''}
@@ -1058,7 +1066,9 @@ export function BrowserScreen({ navigation }: Props) {
               {item.ghost ? (
                 <Text style={[styles.tag, styles.tagDel]}>{t('browser.deleted')}</Text>
               ) : item.versionCount > 1 ? (
-                <Text style={styles.tag}>{item.versionCount}v</Text>
+                <Text style={[styles.tag, { color: c.dim, borderColor: c.line }]}>
+                  {item.versionCount}v
+                </Text>
               ) : null}
             </Pressable>
           )
@@ -1214,10 +1224,22 @@ export function BrowserScreen({ navigation }: Props) {
 
 // --- Sous-composants -------------------------------------------------------
 
-function Crumb({ label, onPress, active }: { label: string; onPress: () => void; active: boolean }) {
+function Crumb({
+  label,
+  onPress,
+  active,
+  c,
+}: {
+  label: string;
+  onPress: () => void;
+  active: boolean;
+  c: ThemeColors;
+}) {
   return (
     <Pressable onPress={onPress} hitSlop={6}>
-      <Text style={[styles.crumb, active && styles.crumbActive]} numberOfLines={1}>
+      <Text
+        style={[styles.crumb, active && [styles.crumbActive, { color: c.dim }]]}
+        numberOfLines={1}>
         {label}
       </Text>
     </Pressable>
@@ -1258,26 +1280,23 @@ const styles = StyleSheet.create({
   titleWrap: { flexDirection: 'row', alignItems: 'baseline', gap: 7, maxWidth: 260 },
   brand: { fontSize: 19 },
   brandBucket: { fontWeight: '500', letterSpacing: 0.2 },
-  brandBucketLight: { color: '#1c1c1e' },
   brandPush: { color: '#0a84ff', fontWeight: '800', letterSpacing: 0.2 },
   titleProfile: { fontSize: 11, fontWeight: '600' },
-  titleProfileLight: { color: '#8a8a8e' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
-  dimText: { textAlign: 'center', opacity: 0.6, fontSize: 14, lineHeight: 20 },
+  dimText: { textAlign: 'center', fontSize: 14, lineHeight: 20 },
 
-  topBar: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#8886' },
+  topBar: { borderBottomWidth: StyleSheet.hairlineWidth },
   crumbRow: { minHeight: 44, justifyContent: 'center' },
   crumbs: { alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, gap: 6 },
   crumb: { fontSize: 14, color: '#0a84ff', maxWidth: 180 },
-  crumbActive: { color: '#8e8e93', fontWeight: '700' },
-  sep: { opacity: 0.4, marginHorizontal: 2, fontSize: 14 },
+  crumbActive: { fontWeight: '700' },
+  sep: { marginHorizontal: 2, fontSize: 14 },
   actionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 8,
     paddingVertical: 6,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#8884',
   },
   spacer: { flex: 1 },
   tBtn: { paddingHorizontal: 12, paddingVertical: 8 },
@@ -1285,11 +1304,9 @@ const styles = StyleSheet.create({
   filterInput: {
     flex: 1,
     fontSize: 15,
-    color: '#1b1b1f',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#888',
     borderRadius: 8,
   },
 
@@ -1308,7 +1325,7 @@ const styles = StyleSheet.create({
   abDanger: { color: '#ffd7d7' },
   abPaste: { color: '#fff', fontSize: 15, fontWeight: '800' },
 
-  moveCrumbs: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#8886' },
+  moveCrumbs: { borderBottomWidth: StyleSheet.hairlineWidth },
 
   opBar: {
     flexDirection: 'row',
@@ -1322,7 +1339,7 @@ const styles = StyleSheet.create({
   opTrack: { height: 3, backgroundColor: '#555' },
   opFill: { height: 3, backgroundColor: '#0a84ff' },
 
-  error: { color: '#c62828', padding: 12, fontSize: 13 },
+  error: { padding: 12, fontSize: 13 },
   listPad: { paddingBottom: 180 },
   emptyWrap: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 120 },
 
@@ -1333,22 +1350,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#8884',
   },
   rowMoving: { backgroundColor: 'rgba(27,94,32,0.12)' },
   rowGhost: { opacity: 0.55 },
   rowMain: { flex: 1 },
   rowName: { flex: 1, fontSize: 15 },
-  rowMeta: { fontSize: 12, opacity: 0.55, marginTop: 3 },
+  rowMeta: { fontSize: 12, marginTop: 3 },
   folderIcon: { fontSize: 18 },
-  fileIcon: { width: 18, textAlign: 'center', opacity: 0.4, fontSize: 18 },
-  chevron: { fontSize: 20, opacity: 0.35 },
+  fileIcon: { width: 18, textAlign: 'center', fontSize: 18 },
+  chevron: { fontSize: 20 },
   sumBtn: { fontSize: 18, color: '#0a84ff', paddingHorizontal: 8 },
   tag: {
     fontSize: 11,
-    opacity: 0.7,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#888',
     borderRadius: 6,
     paddingHorizontal: 6,
     paddingVertical: 2,
