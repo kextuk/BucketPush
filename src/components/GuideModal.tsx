@@ -136,7 +136,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 20,
     marginBottom: 8,
   },
-  scroll: { flexGrow: 0 },
+  scroll: { flexGrow: 1, flexShrink: 1 },
   scrollBody: { paddingHorizontal: 20, paddingVertical: 8, paddingBottom: 16 },
   section: {
     marginBottom: 16,

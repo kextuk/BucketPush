@@ -69,7 +69,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 20,
     marginBottom: 8,
   },
-  scroll: { flexGrow: 0 },
+  scroll: { flexGrow: 1, flexShrink: 1 },
   scrollBody: { paddingHorizontal: 20, paddingVertical: 8 },
   para: { color: '#d8d8dc', fontSize: 13, lineHeight: 19, marginBottom: 12 },
   section: {
