@@ -24,7 +24,6 @@ export type ProfileStore = {
   activeId: string | null;
   profiles: ProfileMeta[];
   version?: number; // schéma (migrations)
-  seeded?: boolean; // profil de démo injecté au 1er lancement (une seule fois)
 };
 
 export const STORE_VERSION = 2;
