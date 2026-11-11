@@ -341,7 +341,6 @@ const DICT: Record<Lang, Record<string, string>> = {
       'Projet gratuit et open source. Aucune publicité, aucun pistage, aucun compte.',
     'about.privacy':
       'Respectueux de tes données : tes clés d’accès sont chiffrées et stockées uniquement sur l’appareil, et rien n’est envoyé ailleurs que vers le serveur S3 que tu configures.',
-    'about.guideButton': 'Guide d’utilisation',
     'about.permsTitle': 'Autorisations',
     'about.permNetwork': 'Réseau (Internet / état du réseau)',
     'about.permNetworkWhy':
@@ -376,6 +375,73 @@ const DICT: Record<Lang, Record<string, string>> = {
       'Nouveaux comptes (depuis mi-2025) : plan à crédits (100 $, +100 $ via tâches, 6 mois). L’ancien palier 5 Go / 12 mois ne s’applique plus. L’implémentation S3 de référence.',
     'providers.note.minio':
       'Open source (AGPL v3), à auto-héberger. Édition communautaire non maintenue depuis début 2026 (binaires précompilés non fournis).',
+
+    'guide.button': 'Guide d’utilisation',
+    'guide.title': 'Guide d’utilisation',
+    'guide.s1Title': '1. Obtenir des identifiants S3',
+    'guide.s1Body':
+      'BucketPush ne fournit pas de stockage : tu connectes ton propre compte chez un fournisseur compatible S3 (vois « Fournisseurs S3 » ci-dessus). Il te faut un bucket (l’espace de stockage) et une clé d’accès (access key ID + secret access key) avec les droits lecture/écriture sur ce bucket.',
+    'guide.s1Note':
+      'Note aussi l’endpoint (l’adresse du serveur, ex. https://s3.eu-central-003.backblazeb2.com) : ton fournisseur l’affiche dans sa documentation ou son tableau de bord.',
+
+    'guide.s2Title': '2. Créer un profil de connexion',
+    'guide.s2Step1': 'Onglet Profils → Nouveau profil.',
+    'guide.s2Step2': 'Renseigne un nom, l’endpoint, le bucket, et colle tes deux clés.',
+    'guide.s2Step3':
+      'Path-style : active pour la plupart des fournisseurs S3-compatibles (Backblaze B2, MinIO…) ; désactive pour AWS S3 classique.',
+    'guide.s2Step4': 'Teste la connexion avant d’enregistrer.',
+    'guide.s2Body':
+      'Tu peux créer plusieurs profils (plusieurs fournisseurs, perso/pro) et basculer de l’un à l’autre depuis l’onglet Profils ; le navigateur se recharge automatiquement à la racine du bucket sélectionné.',
+
+    'guide.s3Title': '3. Parcourir le bucket',
+    'guide.s3Body':
+      'L’écran principal liste dossiers et fichiers du bucket connecté. Appuie sur un dossier pour y entrer, utilise le fil d’Ariane en haut pour remonter. Le champ de filtre cherche dans le dossier courant.',
+
+    'guide.s4Title': '4. Envoyer et recevoir des fichiers',
+    'guide.s4Body1':
+      'Le bouton + ouvre le sélecteur de fichiers du système — choisis-en un ou plusieurs, même très volumineux. L’envoi démarre immédiatement et continue en arrière-plan : tu peux éteindre l’écran ou changer d’appli, le transfert se poursuit. Une coupure réseau le met en pause ; il reprend automatiquement dès que la connexion revient, sans tout recommencer.',
+    'guide.s4Body2':
+      'Pour télécharger, sélectionne un ou plusieurs fichiers puis Télécharger ; pour déplacer, Déplacer puis choisis le dossier de destination.',
+
+    'guide.s5Title': '5. La file d’attente',
+    'guide.s5Body':
+      'L’onglet File d’attente reste consultable même sans transfert en cours. Il affiche le débit cumulé en haut, et trie les éléments par état. Un appui long sur un élément propose pause, annulation ou nouvelle tentative. « Annuler tout » arrête tout en une fois.',
+
+    'guide.s6Title': '6. Versions et fichiers « fantômes »',
+    'guide.s6Body':
+      'Si le versioning est activé côté bucket, supprimer un fichier ne l’efface pas vraiment : un marqueur de suppression le cache, l’ancienne version reste stockée (et facturée) tant qu’elle n’est pas purgée. L’écran Versions d’un fichier permet de restaurer (retirer le marqueur) ou de purger définitivement les anciennes versions.',
+
+    'guide.s7Title': '7. Outils',
+    'guide.s7Item1': 'Taille de ce dossier / du dépôt',
+    'guide.s7Item1Why':
+      'Calcule l’espace occupé, y compris les anciennes versions non visibles dans l’explorateur.',
+    'guide.s7Item2': 'Purger les anciennes versions',
+    'guide.s7Item2Why':
+      'Vide l’historique de versions d’un dossier ou de tout le bucket — libère l’espace facturé par le fournisseur.',
+    'guide.s7Item3': 'Nettoyer les uploads inachevés',
+    'guide.s7Item3Why':
+      'Un transfert interrompu laisse des « parts » orphelines côté serveur (facturées, invisibles). Cet outil les retrouve et les annule.',
+
+    'guide.s8Title': '8. Paramètres : globaux et par profil',
+    'guide.s8Body':
+      'L’écran Paramètres (⚙) définit des valeurs par défaut communes à tous les profils. Dans l’écran d’un profil, chaque réglage peut rester « Hérité » ou passer en « Spécifique » pour le figer juste pour ce profil.',
+    'guide.s8Bullet1':
+      'Taille de part : vide = adaptatif (32 Mio, agrandi pour les fichiers énormes).',
+    'guide.s8Bullet2':
+      'Parts / fichiers en parallèle : plus de parallélisme va plus vite jusqu’à saturer ta connexion ou déclencher du throttling (503) côté fournisseur.',
+    'guide.s8Bullet3':
+      'Ne pas ré-uploader si déjà présent : une requête HEAD avant chaque envoi évite de retransmettre un fichier déjà sur le serveur.',
+
+    'guide.s9Title': '9. Dépannage',
+    'guide.s9Q1': '« Connexion échouée » au test',
+    'guide.s9A1':
+      'Vérifie que l’endpoint commence par https://, qu’il ne contient pas le nom du bucket, que le bucket existe chez le fournisseur, et que la clé a les droits sur ce bucket précis. Essaie de basculer Path-style.',
+    'guide.s9Q2': 'Transfert très lent',
+    'guide.s9A2':
+      'La limite est presque toujours ta connexion ou ton forfait fournisseur, pas l’application — elle ne fait que streamer les données sans jamais les charger en mémoire.',
+    'guide.s9Q3': 'Le transfert s’arrête quand l’app est fermée',
+    'guide.s9A3':
+      'Vérifie que l’optimisation de batterie n’est pas appliquée à BucketPush dans les réglages Android.',
   },
   en: {
     'nav.browser': 'BucketPush',
@@ -645,7 +711,6 @@ const DICT: Record<Lang, Record<string, string>> = {
       'Free and open-source project. No ads, no tracking, no account.',
     'about.privacy':
       'Respectful of your data: your access keys are encrypted and stored on the device only, and nothing is sent anywhere except the S3 server you configure.',
-    'about.guideButton': 'User guide',
     'about.permsTitle': 'Permissions',
     'about.permNetwork': 'Network (Internet / network state)',
     'about.permNetworkWhy':
@@ -679,6 +744,73 @@ const DICT: Record<Lang, Record<string, string>> = {
       'New accounts (since mid-2025): credit-based plan ($100, +$100 via tasks, 6 months). The old 5 GB / 12-month tier no longer applies. The reference S3 implementation.',
     'providers.note.minio':
       'Open source (AGPL v3), self-hosted. Community edition unmaintained since early 2026 (no prebuilt binaries).',
+
+    'guide.button': 'User guide',
+    'guide.title': 'User guide',
+    'guide.s1Title': '1. Getting S3 credentials',
+    'guide.s1Body':
+      'BucketPush doesn’t provide storage itself: you connect your own account with an S3-compatible provider (see "S3 providers" above). You’ll need a bucket (the storage space) and an access key (access key ID + secret access key) with read/write rights on that bucket.',
+    'guide.s1Note':
+      'Also note the endpoint (the server address, e.g. https://s3.eu-central-003.backblazeb2.com): your provider shows it in its docs or dashboard.',
+
+    'guide.s2Title': '2. Creating a connection profile',
+    'guide.s2Step1': 'Profiles tab → New profile.',
+    'guide.s2Step2': 'Enter a name, the endpoint, the bucket, and paste both keys.',
+    'guide.s2Step3':
+      'Path-style: turn on for most S3-compatible providers (Backblaze B2, MinIO…); off for plain AWS S3.',
+    'guide.s2Step4': 'Test the connection before saving.',
+    'guide.s2Body':
+      'You can create several profiles (different providers, or personal/work) and switch between them from the Profiles tab; the browser automatically reloads at the root of the selected bucket.',
+
+    'guide.s3Title': '3. Browsing the bucket',
+    'guide.s3Body':
+      'The main screen lists folders and files in the connected bucket. Tap a folder to enter it, use the breadcrumb at the top to go back up. The filter field searches within the current folder.',
+
+    'guide.s4Title': '4. Uploading and downloading files',
+    'guide.s4Body1':
+      'The + button opens the system file picker — pick one or several files, even very large ones. The upload starts immediately and keeps running in the background: you can turn off the screen or switch apps, the transfer continues. A network drop pauses it; it resumes automatically once the connection is back, without starting over.',
+    'guide.s4Body2':
+      'To download, select one or more files then Download; to move them, Move then pick the destination folder.',
+
+    'guide.s5Title': '5. The queue',
+    'guide.s5Body':
+      'The Queue tab stays available even with nothing running. It shows the combined speed at the top, and sorts items by state. Long-press an item for pause, cancel or retry. "Cancel all" stops everything at once.',
+
+    'guide.s6Title': '6. Versions and "ghost" files',
+    'guide.s6Body':
+      'If versioning is enabled on the bucket, deleting a file doesn’t really erase it: a delete marker hides it, and the old version stays stored (and billed) until purged. A file’s Versions screen lets you restore it (remove the marker) or purge old versions for good.',
+
+    'guide.s7Title': '7. Tools',
+    'guide.s7Item1': 'Size of this folder / repo',
+    'guide.s7Item1Why':
+      'Computes the space used, including old versions not shown in the browser.',
+    'guide.s7Item2': 'Purge old versions',
+    'guide.s7Item2Why':
+      'Clears the version history of a folder or the whole bucket — frees space billed by the provider.',
+    'guide.s7Item3': 'Clean unfinished uploads',
+    'guide.s7Item3Why':
+      'An interrupted transfer leaves orphan "parts" on the server (billed, invisible). This tool finds and cancels them.',
+
+    'guide.s8Title': '8. Settings: global and per-profile',
+    'guide.s8Body':
+      'The Settings screen (⚙) sets defaults shared by every profile. On a profile’s screen, each setting can stay "Inherited" or be switched to "Specific" to pin it just for that profile.',
+    'guide.s8Bullet1':
+      'Part size: empty = adaptive (32 MiB, grown for huge files).',
+    'guide.s8Bullet2':
+      'Parallel parts / files: more parallelism goes faster until it saturates your connection or triggers provider throttling (503).',
+    'guide.s8Bullet3':
+      'Skip if already uploaded: a HEAD request before each upload avoids resending a file already on the server.',
+
+    'guide.s9Title': '9. Troubleshooting',
+    'guide.s9Q1': '"Connection failed" on test',
+    'guide.s9A1':
+      'Check that the endpoint starts with https://, doesn’t include the bucket name, that the bucket actually exists with the provider, and that the key has rights on that exact bucket. Try toggling Path-style.',
+    'guide.s9Q2': 'Transfer is very slow',
+    'guide.s9A2':
+      'The limit is almost always your connection or your provider’s plan, not the app — it only streams data and never loads it into memory.',
+    'guide.s9Q3': 'Transfer stops when the app is closed',
+    'guide.s9A3':
+      'Check that battery optimization isn’t applied to BucketPush in your Android settings.',
   },
 };
 

@@ -1,13 +1,5 @@
 import React from 'react';
-import {
-  Linking,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { t } from '../i18n';
 
@@ -16,8 +8,6 @@ const PERMS: { key: string; why: string }[] = [
   { key: 'about.permNotif', why: 'about.permNotifWhy' },
   { key: 'about.permBackground', why: 'about.permBackgroundWhy' },
 ];
-
-const GUIDE_URL = 'https://kextuk.github.io/BucketPush/guide.html';
 
 export function AboutModal({
   visible,
@@ -40,13 +30,6 @@ export function AboutModal({
             <Text style={s.para}>{t('about.what')}</Text>
             <Text style={s.para}>{t('about.oss')}</Text>
             <Text style={s.para}>{t('about.privacy')}</Text>
-
-            <Pressable
-              style={s.guideRow}
-              onPress={() => Linking.openURL(GUIDE_URL).catch(() => {})}>
-              <Text style={s.guideTxt}>{t('about.guideButton')}</Text>
-              <Text style={s.open}>↗</Text>
-            </Pressable>
 
             <Text style={s.section}>{t('about.permsTitle')}</Text>
             {PERMS.map(p => (
@@ -89,16 +72,6 @@ const s = StyleSheet.create({
   scroll: { flexGrow: 0 },
   scrollBody: { paddingHorizontal: 20, paddingVertical: 8 },
   para: { color: '#d8d8dc', fontSize: 13, lineHeight: 19, marginBottom: 12 },
-  guideRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    marginBottom: 6,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#3a3a3c',
-  },
-  guideTxt: { color: '#0a84ff', fontSize: 14, fontWeight: '600', flex: 1 },
-  open: { color: '#0a84ff', fontSize: 15, marginLeft: 8 },
   section: {
     color: '#fff',
     fontSize: 14,

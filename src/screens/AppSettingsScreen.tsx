@@ -29,6 +29,7 @@ import {
 } from '../components/SettingsControls';
 import { AboutModal } from '../components/AboutModal';
 import { ProvidersModal } from '../components/ProvidersModal';
+import { GuideModal } from '../components/GuideModal';
 import { getLangPref, setLangPref, t, useLang, type LangPref } from '../i18n';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
@@ -40,6 +41,7 @@ export function AppSettingsScreen({ navigation }: Props) {
   const [loaded, setLoaded] = useState(false);
   const [about, setAbout] = useState(false);
   const [providers, setProviders] = useState(false);
+  const [guide, setGuide] = useState(false);
 
   useEffect(() => {
     readPrefs().then(p => {
@@ -148,7 +150,12 @@ export function AppSettingsScreen({ navigation }: Props) {
       </Pressable>
 
       <Text style={styles.section}>{t('about.title')}</Text>
-      <Pressable style={styles.aboutBtn} onPress={() => setAbout(true)}>
+      <Pressable style={styles.aboutBtn} onPress={() => setGuide(true)}>
+        <Text style={styles.aboutTxt}>{t('guide.button')}</Text>
+      </Pressable>
+      <Pressable
+        style={[styles.aboutBtn, styles.aboutBtnSpaced]}
+        onPress={() => setAbout(true)}>
         <Text style={styles.aboutTxt}>{t('about.button')}</Text>
       </Pressable>
       <Pressable
@@ -157,6 +164,7 @@ export function AppSettingsScreen({ navigation }: Props) {
         <Text style={styles.aboutTxt}>{t('providers.button')}</Text>
       </Pressable>
 
+      <GuideModal visible={guide} onClose={() => setGuide(false)} />
       <AboutModal visible={about} onClose={() => setAbout(false)} />
       <ProvidersModal visible={providers} onClose={() => setProviders(false)} />
     </ScrollView>
