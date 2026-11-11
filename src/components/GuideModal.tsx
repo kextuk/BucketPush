@@ -47,8 +47,9 @@ export function GuideModal({
       animationType="fade"
       statusBarTranslucent
       onRequestClose={onClose}>
-      <Pressable style={s.backdrop} onPress={onClose}>
-        <Pressable style={s.card} onPress={() => {}}>
+      <Pressable style={s.backdrop} onPress={onClose} />
+      <View style={s.centerWrap} pointerEvents="box-none">
+        <View style={s.card}>
           <Text style={s.title}>{t('guide.title')}</Text>
           <ScrollView style={s.scroll} contentContainerStyle={s.scrollBody}>
             <Section title={t('guide.s1Title')}>
@@ -109,16 +110,31 @@ export function GuideModal({
           <Pressable style={s.closeBtn} onPress={onClose}>
             <Text style={s.closeTxt}>{t('common.close')}</Text>
           </Pressable>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }
 
 const s = StyleSheet.create({
+  // Fond et carte sont des FRÈRES (pas carte dans fond) : un tap sur le fond
+  // ferme la modale, un tap sur la carte ne remonte jamais jusqu'au fond —
+  // sans passer par un Pressable autour de la ScrollView, qui lui dispute
+  // aléatoirement le geste de scroll (scroll qui « colle » par intermittence).
   backdrop: {
-    flex: 1,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: '#0009',
+  },
+  centerWrap: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     justifyContent: 'center',
     padding: 20,
   },
