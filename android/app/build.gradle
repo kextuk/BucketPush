@@ -55,9 +55,14 @@ react {
 }
 
 /**
- * Set this to true to Run Proguard on Release builds to minify the Java bytecode.
+ * R8 activé : Play Console exige >= 25% d'obscurcissement du code pour la visibilité
+ * de l'app. Pas de reflexion/sérialisation custom côté Kotlin (org.json, OkHttp,
+ * WorkManager, AndroidX Security) -> règles de conservation fournies par ces libs
+ * elles-mêmes, pas de règle manuelle ajoutée ici.
+ * À TESTER avant publication : connexion profil (Keystore/EncryptedSharedPreferences),
+ * sélection de fichier, upload complet, service en arrière-plan, notifications.
  */
-def enableProguardInReleaseBuilds = false
+def enableProguardInReleaseBuilds = true
 
 /**
  * The preferred build flavor of JavaScriptCore (JSC)
