@@ -55,14 +55,15 @@ react {
 }
 
 /**
- * R8 activé : Play Console exige >= 25% d'obscurcissement du code pour la visibilité
- * de l'app. Pas de reflexion/sérialisation custom côté Kotlin (org.json, OkHttp,
- * WorkManager, AndroidX Security) -> règles de conservation fournies par ces libs
- * elles-mêmes, pas de règle manuelle ajoutée ici.
- * À TESTER avant publication : connexion profil (Keystore/EncryptedSharedPreferences),
- * sélection de fichier, upload complet, service en arrière-plan, notifications.
+ * R8 désactivé à nouveau : testé sur device réel, crash au tout premier lancement.
+ *   java.lang.NoSuchMethodException: androidx.work.impl.WorkDatabase_Impl.<init> []
+ *   at androidx.work.WorkManagerInitializer...
+ * R8 garde la classe Room générée par WorkManager mais retire son constructeur
+ * sans argument, appelé par réflexion dès le ContentProvider d'init (avant même
+ * MainActivity). Règle de conservation ajoutée dans proguard-rules.pro ; à
+ * REMETTRE À TRUE ET RETESTER SUR DEVICE RÉEL seulement après ça, pas avant.
  */
-def enableProguardInReleaseBuilds = true
+def enableProguardInReleaseBuilds = false
 
 /**
  * The preferred build flavor of JavaScriptCore (JSC)
