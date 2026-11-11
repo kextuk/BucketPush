@@ -36,7 +36,7 @@ import {
 import { S3Uploader } from '../native/S3Uploader';
 import { Field, IntInput, Row } from '../components/SettingsControls';
 import { t, useLang } from '../i18n';
-import { useThemeColors } from '../theme';
+import { switchProps, useThemeColors } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProfileEdit'>;
 
@@ -163,6 +163,7 @@ export function SettingsScreen({ navigation, route }: Props) {
           : t('settings.inheritedValue', { v: fmtGlobal(k) })}
       </Text>
       <Switch
+        {...switchProps(c)}
         value={has(cfg.overrides, k)}
         onValueChange={on => {
           if (on) setOverride(k, globalPrefs[k]);
@@ -199,7 +200,11 @@ export function SettingsScreen({ navigation, route }: Props) {
       {has(cfg.overrides, k) ? (
         <View style={styles.inheritRow}>
           <Text style={[styles.inheritTxt, { color: c.dim }]}>{t('settings.specificValue')}</Text>
-          <Switch value={!!cfg.overrides[k]} onValueChange={v => setOverride(k, v)} />
+          <Switch
+            {...switchProps(c)}
+            value={!!cfg.overrides[k]}
+            onValueChange={v => setOverride(k, v)}
+          />
         </View>
       ) : null}
     </Field>
@@ -282,6 +287,7 @@ export function SettingsScreen({ navigation, route }: Props) {
 
         <Row label={t('settings.pathStyle')} hint={t('settings.pathStyleHint')}>
           <Switch
+            {...switchProps(c)}
             value={cfg.forcePathStyle}
             onValueChange={v => set('forcePathStyle', v)}
           />

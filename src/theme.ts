@@ -19,6 +19,7 @@ export type ThemeColors = {
   danger: string;
   dangerBg: string;
   overlayPressed: string; // fond translucide d'un appui (ripple-like), bordures discrètes
+  switchTrackOff: string; // Switch natif : piste à l'état désactivé (trackColor.false)
 };
 
 const light: ThemeColors = {
@@ -33,6 +34,7 @@ const light: ThemeColors = {
   danger: '#c62828',
   dangerBg: '#fdeceb',
   overlayPressed: '#8881',
+  switchTrackOff: '#d1d1d6',
 };
 
 const dark: ThemeColors = {
@@ -47,8 +49,18 @@ const dark: ThemeColors = {
   danger: '#ff6b6b',
   dangerBg: '#3a1f20',
   overlayPressed: '#ffffff22',
+  switchTrackOff: '#3a3a3c',
 };
 
 export function useThemeColors(): ThemeColors {
   return useColorScheme() === 'dark' ? dark : light;
+}
+
+/** Props à étaler sur un <Switch> natif : sans elles, ses couleurs viennent du
+ *  thème Android par défaut (AppCompat DayNight), peu contrasté en sombre. */
+export function switchProps(c: ThemeColors) {
+  return {
+    trackColor: { false: c.switchTrackOff, true: c.accent },
+    thumbColor: '#ffffff',
+  };
 }

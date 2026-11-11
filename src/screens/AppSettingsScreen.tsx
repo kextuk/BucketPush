@@ -26,7 +26,7 @@ import { AboutModal } from '../components/AboutModal';
 import { ProvidersModal } from '../components/ProvidersModal';
 import { GuideModal } from '../components/GuideModal';
 import { getLangPref, setLangPref, t, useLang, type LangPref } from '../i18n';
-import { useThemeColors } from '../theme';
+import { switchProps, useThemeColors } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
@@ -128,15 +128,24 @@ export function AppSettingsScreen({ navigation }: Props) {
       </Field>
 
       <Row label={t('settings.wifiOnly')}>
-        <Switch value={prefs.wifiOnly} onValueChange={v => set('wifiOnly', v)} />
+        <Switch
+          {...switchProps(c)}
+          value={prefs.wifiOnly}
+          onValueChange={v => set('wifiOnly', v)}
+        />
       </Row>
 
       <Row label={t('settings.skipExisting')} hint={t('settings.skipExistingHint')}>
-        <Switch value={prefs.skipExisting} onValueChange={v => set('skipExisting', v)} />
+        <Switch
+          {...switchProps(c)}
+          value={prefs.skipExisting}
+          onValueChange={v => set('skipExisting', v)}
+        />
       </Row>
 
       <Row label={t('settings.timestampKeys')}>
         <Switch
+          {...switchProps(c)}
           value={prefs.timestampKeys}
           onValueChange={v => set('timestampKeys', v)}
         />
